@@ -1,0 +1,59 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/animus-physics",
+    "crates/animus-core",
+    "crates/animus-hev",
+    "crates/animus-render",
+    "crates/animus-input",
+    "crates/animus-cache",
+    "crates/animus-compositor",
+    "crates/vitusos-native",
+    "crates/vitusos-installer",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["vitusOS Core Architecture Team"]
+license = "Proprietary"
+repository = "https://github.com/vitusOS/vitusos"
+
+[workspace.dependencies]
+# Async Runtime & Concurrency
+tokio = { version = "1.40", features = ["full"] }
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
+
+# Cryptography & Security
+argon2 = "0.5"
+aes-gcm = "0.10"
+rand = "0.8"
+zeroize = { version = "1.8", features = ["derive", "zeroize_derive"] }
+subtle = "2.6"
+
+# Serialization & Database
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Logging & Diagnostics
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Math & Color
+glam = { version = "0.29", features = ["serde"] }
+
+# Typography & Font Rendering
+ttf-parser = "0.25"
+fontdue = "0.9"
+
+# Internal Crate References
+animus-physics = { path = "crates/animus-physics" }
+animus-core = { path = "crates/animus-core" }
+animus-hev = { path = "crates/animus-hev" }
+animus-render = { path = "crates/animus-render" }
+animus-input = { path = "crates/animus-input" }
+animus-cache = { path = "crates/animus-cache" }

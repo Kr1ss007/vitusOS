@@ -1,0 +1,16 @@
+[package]
+name = "animus-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+animus-physics.workspace = true
+tokio.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+glam.workspace = true
+zeroize = { workspace = true, features = ["alloc"] }

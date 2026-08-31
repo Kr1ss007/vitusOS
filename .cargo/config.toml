@@ -1,0 +1,20 @@
+[build]
+rustflags = [
+    "-C", "target-cpu=native",
+]
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "debuginfo"
+
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

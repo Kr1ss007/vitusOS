@@ -1,0 +1,13 @@
+/target/
+**/*.rs.bk
+*.pdb
+*.obj
+*.exe
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+/build/
+/assets/packages/
+/spec doc/

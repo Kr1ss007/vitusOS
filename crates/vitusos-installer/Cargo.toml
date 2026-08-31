@@ -1,0 +1,21 @@
+[package]
+name = "vitusos-installer"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "vitusos-installer"
+path = "src/main.rs"
+
+[dependencies]
+animus-physics.workspace = true
+animus-core.workspace = true
+animus-render.workspace = true
+animus-hev.workspace = true
+tokio.workspace = true
+serde.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true

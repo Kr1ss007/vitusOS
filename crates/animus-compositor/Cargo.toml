@@ -1,0 +1,28 @@
+[package]
+name = "animus-compositor"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "vitusos-compositor"
+path = "src/main.rs"
+
+[dependencies]
+animus-physics.workspace = true
+animus-core.workspace = true
+animus-render.workspace = true
+animus-input.workspace = true
+animus-cache.workspace = true
+animus-hev.workspace = true
+tokio.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+glam.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+zeroize = { workspace = true, features = ["alloc"] }
