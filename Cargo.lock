@@ -968,6 +968,7 @@ dependencies = [
  "animus-physics",
  "animus-render",
  "anyhow",
+ "rand",
  "serde",
  "tokio",
  "tracing",
