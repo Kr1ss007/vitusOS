@@ -53,6 +53,7 @@ pub struct CompositorContext {
     pub cockpit_view: CockpitView,
     pub global_menu: GlobalMenu,
     pub windows: Vec<AEWindow>,
+    pub pipeline: animus_render::RenderPipeline,
 }
 
 impl CompositorContext {
@@ -79,6 +80,10 @@ impl CompositorContext {
         let mut dock = Dock::new();
         let cockpit_view = CockpitView::new(bus.clone());
         let global_menu = GlobalMenu::new();
+        let pipeline = animus_render::RenderPipeline::new(
+            handoff.horizontal_resolution.max(1920),
+            handoff.vertical_resolution.max(1080),
+        );
 
         // Pinned dock items with verified scalable assets
         dock.add_item(DockItem::new("filer", "Files", "assets/icons/dock/filer.svg"));
@@ -111,6 +116,7 @@ impl CompositorContext {
             cockpit_view,
             global_menu,
             windows: Vec::new(),
+            pipeline,
         }
     }
 
@@ -138,6 +144,36 @@ impl CompositorContext {
         for window in &mut self.windows {
             window.update(dt);
         }
+
+        // Execute canonical 7-layer frame rendering
+        let win_render_list: Vec<animus_render::RenderWindow> = self.windows.iter().map(|w| animus_render::RenderWindow {
+            id: w.handle,
+            title: w.title.clone(),
+            x: w.pos.x.value,
+            y: w.pos.y.value,
+            width: w.width,
+            height: w.height,
+            shadow_x: w.shadow_pos.x.value,
+            shadow_y: w.shadow_pos.y.value,
+            corner_radius: w.corner_radius,
+            altitude: w.altitude,
+            is_visible: true,
+            is_focused: w.is_focused,
+        }).collect();
+
+
+        let is_cc_open = *self.control_center.is_open.read();
+        let dock_count = self.dock.items.len();
+        let app_title = self.panel.focused_app_title.clone();
+
+        self.pipeline.render_frame(
+            &win_render_list,
+            dock_count,
+            is_cc_open,
+            false,
+            &app_title,
+        );
+
 
         self.engine.event_bus.publish(AEEvent::Tick { dt });
     }
