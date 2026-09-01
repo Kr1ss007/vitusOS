@@ -15,6 +15,7 @@ animus-core.workspace = true
 animus-render.workspace = true
 animus-hev.workspace = true
 tokio.workspace = true
+rand.workspace = true
 serde.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

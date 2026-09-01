@@ -1,63 +1,38 @@
-//! vitusOS Live ISO Installer Wizard.
+//! vitusOS Live ISO Setup Assistant & Installer Binary.
 
-use animus_physics::spring::{SpringProfile, SpringSolver};
-use serde::{Deserialize, Serialize};
+use animus_core::event_bus::EventBus;
 use tracing::info;
+use vitusos_installer::SetupWizard;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum InstallStep {
-    Welcome,
-    SelectDisk,
-    ConfigureVault,
-    CopyingSystem,
-    Complete,
-}
-
-pub struct InstallerEngine {
-    pub current_step: InstallStep,
-    pub install_progress: SpringSolver, // SPRING_SELECTION (400, 28)
-    pub card_scale: SpringSolver,       // SPRING_SHEET (420, 30)
-}
-
-impl Default for InstallerEngine {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl InstallerEngine {
-    pub fn new() -> Self {
-        Self {
-            current_step: InstallStep::Welcome,
-            install_progress: SpringSolver::new(0.0, SpringProfile::Selection),
-            card_scale: SpringSolver::new(1.0, SpringProfile::Sheet),
-        }
-    }
-
-    pub fn next(&mut self) {
-        match self.current_step {
-            InstallStep::Welcome => self.current_step = InstallStep::SelectDisk,
-            InstallStep::SelectDisk => self.current_step = InstallStep::ConfigureVault,
-            InstallStep::ConfigureVault => {
-                self.current_step = InstallStep::CopyingSystem;
-                self.install_progress.set_target(1.0);
-            }
-            InstallStep::CopyingSystem => self.current_step = InstallStep::Complete,
-            InstallStep::Complete => {}
-        }
-    }
-
-    pub fn update(&mut self, dt: f32) {
-        self.install_progress.update(dt);
-        self.card_scale.update(dt);
-    }
-}
-
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
-    info!("Starting vitusOS Live Installer Engine...");
-    let mut installer = InstallerEngine::new();
-    installer.next();
-    info!("Installer initialized on step: {:?}", installer.current_step);
+    info!("================================================================================");
+    info!("             vitusOS macOS-Grade Setup Assistant & Installer Engine            ");
+    info!("================================================================================");
+
+    let bus = EventBus::new();
+    let mut wizard = SetupWizard::new(bus);
+
+    wizard.activate();
+    info!("Wizard active on step: {:?} ('{}')", wizard.current_step, wizard.current_step.title());
+    info!("Subtext: '{}'", wizard.current_step.subtitle());
+    info!("Detected Storage Targets: {} device(s)", wizard.available_disks.len());
+
+    for disk in &wizard.available_disks {
+        info!(" -> Target Drive: {} ({}) [{:?}]", disk.model, disk.formatted_size(), disk.transport);
+    }
+
+    // Step forward demonstration
+    wizard.advance();
+    info!("Stepped forward to: {:?}", wizard.current_step);
+
+    wizard.advance();
+    info!("Stepped forward to: {:?}", wizard.current_step);
+
+    wizard.password_input = "VitusOS!2026MasterKey".to_string();
+    info!("Evaluated Password Strength: {:?}", wizard.password_strength());
+
+    info!("Installer initialized and ready for compositor surface presentation.");
     Ok(())
 }
