@@ -62,6 +62,43 @@ impl Dock {
         self.items.push(item);
     }
 
+    /// Triggers bounce spring and spawns native process on user click
+    pub fn launch_item(&mut self, idx: usize) -> bool {
+        if let Some(item) = self.items.get_mut(idx) {
+            item.bounce.set_target(1.0);
+            item.is_running = true;
+            tracing::info!("Dock: User clicked '{}' -> launching process", item.app_id);
+
+            let app_id = item.app_id.clone();
+            std::thread::spawn(move || {
+                let _ = std::process::Command::new("vitusos-native")
+                    .args(["--app", &app_id])
+                    .spawn();
+            });
+            return true;
+        }
+        false
+    }
+
+    /// Applies Gaussian magnification across icons as cursor hovers over the Dock
+    pub fn handle_pointer_motion(&mut self, cursor_x: f32, dock_x: f32) {
+        let item_width = 56.0f32;
+        for (i, item) in self.items.iter_mut().enumerate() {
+            let item_center = dock_x + 16.0 + (i as f32 * item_width) + (item_width * 0.5);
+            let dist = (cursor_x - item_center).abs();
+            let sigma = 64.0f32;
+            let factor = (- (dist * dist) / (2.0 * sigma * sigma)).exp();
+            let target_size = Self::ICON_SIZE + (Self::MAX_MAGNIFY - Self::ICON_SIZE) * factor;
+            item.magnify.set_target(target_size);
+        }
+    }
+
+    pub fn reset_magnification(&mut self) {
+        for item in &mut self.items {
+            item.magnify.set_target(Self::ICON_SIZE);
+        }
+    }
+
     pub fn update(&mut self, dt: f32) {
         for item in &mut self.items {
             item.magnify.update(dt);
@@ -69,3 +106,22 @@ impl Dock {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dock_magnification_and_launch() {
+        let mut dock = Dock::new();
+        dock.add_item(DockItem::new("filer", "Files", "assets/icons/dock/filer.svg"));
+        dock.add_item(DockItem::new("terminow", "Terminow", "assets/icons/dock/terminow.svg"));
+
+        dock.handle_pointer_motion(40.0, 0.0);
+        assert!(dock.items[0].magnify.target > Dock::ICON_SIZE);
+
+        assert!(dock.launch_item(0));
+        assert!(dock.items[0].is_running);
+    }
+}
+

@@ -93,7 +93,44 @@ impl StateManager {
         let mut store = self.store.write();
         store.remove(key).is_some()
     }
+
+    /// Persists core system configuration state to JSON on disk
+    pub fn save_to_disk(&self, path: &std::path::Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let mut map = HashMap::new();
+        if let Some(w) = self.get::<f32>(state_keys::SCREEN_WIDTH) { map.insert(state_keys::SCREEN_WIDTH.to_string(), serde_json::Value::from(w)); }
+        if let Some(h) = self.get::<f32>(state_keys::SCREEN_HEIGHT) { map.insert(state_keys::SCREEN_HEIGHT.to_string(), serde_json::Value::from(h)); }
+        if let Some(d) = self.get::<bool>(state_keys::DARK_MODE) { map.insert(state_keys::DARK_MODE.to_string(), serde_json::Value::from(d)); }
+        if let Some(m) = self.get::<bool>(state_keys::REDUCED_MOTION) { map.insert(state_keys::REDUCED_MOTION.to_string(), serde_json::Value::from(m)); }
+
+        let json = serde_json::to_string_pretty(&map).unwrap_or_default();
+        std::fs::write(path, json)
+    }
+
+    /// Loads persisted system state from JSON on disk
+    pub fn load_from_disk(&self, path: &std::path::Path) -> std::io::Result<()> {
+        if !path.exists() {
+            return Ok(());
+        }
+        let data = std::fs::read_to_string(path)?;
+        if let Ok(map) = serde_json::from_str::<HashMap<String, serde_json::Value>>(&data) {
+            for (k, v) in map {
+                if let Some(b) = v.as_bool() {
+                    self.set(k, b);
+                } else if let Some(f) = v.as_f64() {
+                    self.set(k, f as f32);
+                } else if let Some(s) = v.as_str() {
+                    self.set(k, s.to_string());
+                }
+            }
+        }
+        Ok(())
+    }
 }
+
 
 #[cfg(test)]
 mod tests {
