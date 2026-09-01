@@ -9,7 +9,12 @@ license.workspace = true
 name = "vitusos-compositor"
 path = "src/main.rs"
 
+[[bin]]
+name = "vitusos-simulation"
+path = "src/simulation.rs"
+
 [dependencies]
+vitusos-installer = { path = "../vitusos-installer" }
 animus-physics.workspace = true
 animus-core.workspace = true
 animus-render.workspace = true

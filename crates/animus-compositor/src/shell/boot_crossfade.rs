@@ -41,7 +41,7 @@ pub struct BootCrossfade {
 impl BootCrossfade {
     pub fn new(bus: EventBus) -> Self {
         Self {
-            wordmark_text: "victusOS",
+            wordmark_text: "vitusOS",
             progress_bar: BootProgressBar::default(),
             desktop_scale: SpringSolver::new(1.02, SpringProfile::Boot),
             screen_opacity: SpringSolver::new(1.0, SpringProfile::Boot),
