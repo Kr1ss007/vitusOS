@@ -117,15 +117,16 @@ mod tests {
         let bus = EventBus::new();
         let settings = SettingsManager::new(bus);
 
-        assert_eq!(*settings.ota_channel.read(), OTAChannel::UpstreamOne);
-
-        // Switch to Upstream Color
-        settings.set_ota_channel(OTAChannel::UpstreamColor);
+        // Default is Upstream Color
         assert_eq!(*settings.ota_channel.read(), OTAChannel::UpstreamColor);
-        assert_eq!(settings.system_info.read().ota_channel, OTAChannel::UpstreamColor);
+
+        // Switch to Upstream One
+        settings.set_ota_channel(OTAChannel::UpstreamOne);
+        assert_eq!(*settings.ota_channel.read(), OTAChannel::UpstreamOne);
+        assert_eq!(settings.system_info.read().ota_channel, OTAChannel::UpstreamOne);
 
         // Check for updates
         settings.check_for_updates();
-        assert!(settings.update_status_message.read().contains("Upstream Color"));
+        assert!(settings.update_status_message.read().contains("Upstream One"));
     }
 }

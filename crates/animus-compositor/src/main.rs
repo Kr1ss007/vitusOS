@@ -1,17 +1,24 @@
 //! vitusOS Canonical Compositor Main Entry Point.
 //!
 //! Production bare-metal compositor running at 144Hz with Vulkan DMA-BUF scanout,
-//! native AESurfaces LockScreen, LoginManager, ControlCenter, ShutdownScreen, EOBus, and ae-shell-v1.
+//! native AESurfaces LockScreen, LoginManager, ControlCenter, ShutdownScreen,
+//! VirtualDesktopManager, MotionWave gestures, CrashManager, and EOBus.
 
 pub mod shell;
 pub mod window;
+pub mod workspace;
 
 use std::sync::Arc;
 use std::time::Instant;
+use animus_core::crash::CrashManager;
 use animus_core::eobus::EOBus;
 use animus_core::events::AEEvent;
+use animus_core::handoff::AnimusGpuHandoff;
+use animus_core::registry::RegistryManager;
 use animus_core::AnimusEngine;
+use animus_input::motion_wave::MotionWave;
 use animus_render::vulkan_context::VulkanContext;
+use animus_render::wallpaper_sampler::WallpaperTintSampler;
 use shell::{
     AEShellProtocolManager, AELoginManager, BootCrossfade, CockpitView, ControlCenter, Dock,
     DockItem, GlobalMenu, LockScreen, Panel, ShutdownScreen, WelcomeScreen,
@@ -19,11 +26,18 @@ use shell::{
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 use window::AEWindow;
+use workspace::VirtualDesktopManager;
 
 pub struct CompositorContext {
     pub engine: Arc<AnimusEngine>,
+    pub crash_manager: Arc<CrashManager>,
+    pub registry: Arc<RegistryManager>,
+    pub handoff: AnimusGpuHandoff,
     pub eobus: Arc<EOBus>,
     pub vulkan_ctx: VulkanContext,
+    pub wallpaper_sampler: WallpaperTintSampler,
+    pub motion_wave: MotionWave,
+    pub workspace_manager: VirtualDesktopManager,
     pub boot_crossfade: BootCrossfade,
     pub welcome_screen: WelcomeScreen,
     pub login_manager: AELoginManager,
@@ -41,8 +55,14 @@ pub struct CompositorContext {
 impl CompositorContext {
     pub fn new(engine: Arc<AnimusEngine>) -> Self {
         let bus = (*engine.event_bus).clone();
+        let crash_manager = Arc::new(CrashManager::new(bus.clone()));
+        let registry = Arc::new(RegistryManager::new(bus.clone()));
+        let handoff = AnimusGpuHandoff::read_from_efivars().unwrap_or_default();
         let eobus = Arc::new(EOBus::new(bus.clone()));
-        let vulkan_ctx = VulkanContext::new(1920, 1080);
+        let vulkan_ctx = VulkanContext::new(handoff.horizontal_resolution, handoff.vertical_resolution);
+        let wallpaper_sampler = WallpaperTintSampler::new();
+        let motion_wave = MotionWave::new(bus.clone());
+        let workspace_manager = VirtualDesktopManager::new(handoff.horizontal_resolution as f32, bus.clone());
         let boot_crossfade = BootCrossfade::new(bus.clone());
         let welcome_screen = WelcomeScreen::new(bus.clone());
         let login_manager = AELoginManager::new(bus.clone());
@@ -64,8 +84,14 @@ impl CompositorContext {
 
         Self {
             engine,
+            crash_manager,
+            registry,
+            handoff,
             eobus,
             vulkan_ctx,
+            wallpaper_sampler,
+            motion_wave,
+            workspace_manager,
             boot_crossfade,
             welcome_screen,
             login_manager,
@@ -87,13 +113,14 @@ impl CompositorContext {
         // Drain background worker events onto main loop (§4.4)
         self.engine.event_bus.drain_async_queue();
 
-        // Update subsystem animations
+        // Update subsystem animations and physics
         self.boot_crossfade.update(dt);
         self.welcome_screen.update(dt);
         self.login_manager.update(dt);
         self.lock_screen.update(dt);
         self.control_center.update(dt);
         self.shutdown_screen.update(dt);
+        self.workspace_manager.update(dt);
         self.panel.update(dt);
         self.dock.update(dt);
         self.cockpit_view.update(dt);
@@ -116,20 +143,21 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Initializing vitusOS Canonical Compositor...");
     
-    // 1. Initialize Authoritative AnimusEngine
+    // 1. Initialize CrashManager as first action (Part 21.2)
     let engine = Arc::new(AnimusEngine::new());
-    engine.boot_sequence();
-
-    // 2. Initialize Shell & Surfaces
     let mut ctx = CompositorContext::new(Arc::clone(&engine));
+    ctx.crash_manager.initialize();
+
+    // 2. Step Engine Boot Sequence & Audio Handoff
+    engine.boot_sequence();
     ctx.eobus.start();
     ctx.vulkan_ctx.initialize(-1);
 
     // 3. Step Through Boot Milestones
-    ctx.boot_crossfade.set_progress(0.15); // iGPU & dGPU detected, DRM set
+    ctx.boot_crossfade.set_progress(0.15); // Stage 0/1/2 Handoff complete, DRM set
     ctx.boot_crossfade.set_progress(0.40); // Sound engine & boot chime active
     ctx.boot_crossfade.set_progress(0.65); // Vulkan pipeline & glass shaders ready
-    ctx.boot_crossfade.set_progress(0.85); // Wayland socket bound
+    ctx.boot_crossfade.set_progress(0.85); // Wayland socket & CrashSite bound
     ctx.boot_crossfade.set_progress(1.00); // Shell crossfade ready
     ctx.boot_crossfade.begin_fade();
 
