@@ -1,0 +1,31 @@
+<svg width="3840" height="2160" viewBox="0 0 3840 2160" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="space_glow" cx="0.8" cy="0.2" r="0.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF6B00" stop-opacity="0.35"/>
+      <stop offset="40%" stop-color="#803400" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#141416" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="nebula_glow" cx="0.2" cy="0.8" r="0.7" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#007AFF" stop-opacity="0.18"/>
+      <stop offset="60%" stop-color="#5856D6" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#141416" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="3840" y2="2160" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1A181C"/>
+      <stop offset="50%" stop-color="#141416"/>
+      <stop offset="100%" stop-color="#0E0E10"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="3840" height="2160" fill="url(#bg)"/>
+
+  <!-- Ambient Light Volumes -->
+  <rect width="3840" height="2160" fill="url(#space_glow)"/>
+  <rect width="3840" height="2160" fill="url(#nebula_glow)"/>
+
+  <!-- Dynamic Geometric Orbit Elements -->
+  <circle cx="2800" cy="650" r="420" stroke="#FF6B00" stroke-width="1.5" stroke-opacity="0.25" fill="none"/>
+  <circle cx="2800" cy="650" r="760" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.08" fill="none"/>
+  <circle cx="1100" cy="1600" r="540" stroke="#007AFF" stroke-width="1" stroke-opacity="0.12" fill="none"/>
+</svg>

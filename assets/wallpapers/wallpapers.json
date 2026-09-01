@@ -1,0 +1,14 @@
+{
+  "default_wallpaper": "vitusOS_Space_Orange_Dark",
+  "wallpapers": [
+    {
+      "id": "vitusos_space_orange",
+      "name": "vitusOS Space Orange",
+      "dark_file": "vitusOS_Space_Orange_Dark.svg",
+      "light_file": "vitusOS_Space_Orange_Light.svg",
+      "accent_color": "#FF6B00",
+      "ambient_tint": [0.18, 0.08, 0.02, 1.0],
+      "is_dynamic": true
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+<svg width="3840" height="2160" viewBox="0 0 3840 2160" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="light_glow" cx="0.8" cy="0.2" r="0.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF9F40" stop-opacity="0.25"/>
+      <stop offset="50%" stop-color="#FFD6A5" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#F6F6F8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="light_bg" x1="0" y1="0" x2="3840" y2="2160" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="50%" stop-color="#F5F5F7"/>
+      <stop offset="100%" stop-color="#E8E8ED"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="3840" height="2160" fill="url(#light_bg)"/>
+
+  <!-- Ambient Light Volumes -->
+  <rect width="3840" height="2160" fill="url(#light_glow)"/>
+
+  <!-- Geometric Elements -->
+  <circle cx="2800" cy="650" r="420" stroke="#FF6B00" stroke-width="1.5" stroke-opacity="0.20" fill="none"/>
+  <circle cx="2800" cy="650" r="760" stroke="#8E8E93" stroke-width="1" stroke-opacity="0.10" fill="none"/>
+</svg>

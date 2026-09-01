@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- protocol/osf-shell-v1.xml
+     Custom Wayland protocol for OSFNative apps.
+     Third-party apps use xdg-shell. OSFNative apps use this.
+     Allows global menu, Dock badge, attention request, altitude blur. -->
+
+<protocol name="osf_shell_v1">
+  <interface name="osf_shell_manager_v1" version="1">
+    <description summary="OSFNative shell integration manager"/>
+
+    <request name="get_osf_surface">
+      <description summary="Get OSF surface for an xdg_toplevel"/>
+      <arg name="id"       type="new_id" interface="osf_surface_v1"/>
+      <arg name="toplevel" type="object" interface="xdg_toplevel"/>
+    </request>
+  </interface>
+
+  <interface name="osf_surface_v1" version="1">
+    <description summary="OSFNative surface integration"/>
+
+    <!-- Sets the global menu bar content.
+         Payload: UTF-8 JSON MenuDefinition -->
+    <request name="set_application_menu">
+      <arg name="menu_json" type="string"/>
+    </request>
+
+    <!-- Sets Dock badge count. -1 = remove badge. -->
+    <request name="set_badge_count">
+      <arg name="count" type="int"/>
+    </request>
+
+    <!-- Sets Surface Altitude for background glass blur rendering -->
+    <request name="set_altitude">
+      <arg name="altitude" type="uint"/>
+    </request>
+
+    <!-- Requests Dock icon bounce (e.g. background task complete) -->
+    <request name="request_attention"/>
+
+    <!-- Tell compositor this surface is no longer managed -->
+    <request name="destroy" type="destructor"/>
+
+    <!-- Compositor tells app: surface received keyboard focus -->
+    <event name="focused"/>
+
+    <!-- Compositor tells app: user clicked window close button -->
+    <event name="close_requested"/>
+
+    <!-- User activated a menu item -->
+    <event name="menu_activated">
+      <arg name="menu_item_id" type="string"/>
+    </event>
+
+    <!-- Compositor reconfigures surface (size/state) -->
+    <event name="configure">
+      <arg name="width"  type="int"/>
+      <arg name="height" type="int"/>
+      <arg name="state"  type="uint"/>
+    </event>
+  </interface>
+</protocol>
