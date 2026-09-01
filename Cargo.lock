@@ -984,12 +984,14 @@ dependencies = [
  "animus-hev",
  "animus-physics",
  "animus-render",
+ "anyhow",
  "glam",
  "parking_lot",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
