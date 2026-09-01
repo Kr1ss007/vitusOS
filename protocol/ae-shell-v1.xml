@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- protocol/osf-shell-v1.xml
-     Custom Wayland protocol for OSFNative apps.
-     Third-party apps use xdg-shell. OSFNative apps use this.
-     Allows global menu, Dock badge, attention request, altitude blur. -->
+<!-- protocol/ae-shell-v1.xml
+     Custom Wayland protocol for AnimusEngine / vitusOS AESurfaces.
+     Third-party apps use xdg-shell. Native AESurfaces use this protocol.
+     Allows global menu sync, Dock badge indicator, attention requests, and glass blur altitudes. -->
 
-<protocol name="osf_shell_v1">
-  <interface name="osf_shell_manager_v1" version="1">
-    <description summary="OSFNative shell integration manager"/>
+<protocol name="ae_shell_v1">
+  <interface name="ae_shell_manager_v1" version="1">
+    <description summary="AnimusEngine native shell integration manager"/>
 
-    <request name="get_osf_surface">
-      <description summary="Get OSF surface for an xdg_toplevel"/>
-      <arg name="id"       type="new_id" interface="osf_surface_v1"/>
+    <request name="get_ae_surface">
+      <description summary="Get AESurface for an xdg_toplevel"/>
+      <arg name="id"       type="new_id" interface="ae_surface_v1"/>
       <arg name="toplevel" type="object" interface="xdg_toplevel"/>
     </request>
   </interface>
 
-  <interface name="osf_surface_v1" version="1">
-    <description summary="OSFNative surface integration"/>
+  <interface name="ae_surface_v1" version="1">
+    <description summary="AnimusEngine surface integration"/>
 
     <!-- Sets the global menu bar content.
          Payload: UTF-8 JSON MenuDefinition -->

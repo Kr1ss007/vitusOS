@@ -1,5 +1,5 @@
 // shaders/rounded_rect.vert
-// All OSFNative solid surfaces (OSFWindow chrome, OSFContent, pills, etc.)
+// All AnimusEngine AESurfaces (AEWindow chrome, AEContent, pills, buttons, etc.)
 #version 450
 layout(push_constant) uniform PC {
     vec2  pos; vec2 size; vec2 screenSize;
