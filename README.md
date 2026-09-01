@@ -106,17 +106,32 @@ cargo run --bin vitusos-compositor
 
 ---
 
-## Release Channels
+## Release Channels & Git Branch Architecture
 
-1. **Upstream Color (Active Channel):**
-   * Target: Experimental features, rolling improvements, latest Vulkan and compositor updates.
-   * Distribution: Continuous deployment via GitHub repository branches.
+| Channel | Git Branch | Release ISO Naming Pattern | Description |
+| :--- | :--- | :--- | :--- |
+| **Upstream Color** | `main` | `vitusOS_upstreamColor_<version>_x86_64_amd64.iso` | Active rolling development channel. Delivers experimental features, latest Vulkan updates, and bleeding-edge compositor builds. |
+| **Upstream One** | `upstreamOne` | `vitusOS_upstreamOne_<version>_x86_64_amd64.iso` | Verified, production-grade Stable LTS channel for daily workstation reliability and security. |
 
-2. **Upstream One:**
-   * Target: Verified, stable long-term support builds for daily workstations.
-   * Distribution: Tagged releases and signed packages.
+---
 
-Users can switch between release channels at any time via the **Settings > General / Updates** panel.
+## Grand Payload ISO Building (8–10 GB OOTB)
+
+vitusOS provides an automated, batteries-included ISO builder that pre-bakes all proprietary and open-source GPU drivers (NVIDIA 550/560, AMD RADV, Intel ANV), full firmware, media codecs, high-fidelity typography, and the AnimusEngine runtime.
+
+To generate a bootable hybrid ISO:
+
+```bash
+cd distro/builder
+
+# Build Upstream Color (Rolling development ISO)
+sudo ./build_iso.sh --channel upstreamColor --version 0.0.1
+
+# Build Upstream One (Stable production ISO)
+sudo ./build_iso.sh --channel upstreamOne --version 1.0.0
+```
+
+The resulting hybrid ISO (`vitusOS_<channel>_<version>_x86_64_amd64.iso`) supports direct USB `dd` flashing, UEFI Secure Boot, and legacy BIOS systems.
 
 ---
 

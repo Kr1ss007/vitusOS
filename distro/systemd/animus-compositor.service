@@ -1,0 +1,38 @@
+[Unit]
+Description=vitusOS AnimusEngine Wayland Compositor & Display Server
+Documentation=https://github.com/Kr1ss007/vitusOS
+After=systemd-user-sessions.service plymouth-quit-wait.service systemd-udevd.service
+After=pipewire.service wireplumber.service
+Before=graphical.target
+Wants=pipewire.service wireplumber.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+Environment=XDG_CURRENT_DESKTOP=vitusOS
+Environment=XDG_SESSION_TYPE=wayland
+Environment=XDG_SESSION_DESKTOP=vitusOS
+Environment=WLR_RENDERER=vulkan
+Environment=WLR_NO_HARDWARE_CURSORS=0
+Environment=ANIMUS_LOG=info
+Environment=QT_QPA_PLATFORM=wayland;xcb
+Environment=GDK_BACKEND=wayland,x11
+Environment=MOZ_ENABLE_WAYLAND=1
+ExecStart=/usr/bin/animus-compositor
+Restart=always
+RestartSec=1s
+StandardOutput=journal
+StandardError=journal
+PAMName=login
+User=vitus
+Group=vitus
+SupplementaryGroups=video render input audio plugdev
+
+# Resource Limits for real-time physics & low latency rendering
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+CPUSchedulingPolicy=rr
+CPUSchedulingPriority=50
+
+[Install]
+WantedBy=graphical.target

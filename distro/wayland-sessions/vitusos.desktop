@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=vitusOS
+Comment=vitusOS AnimusEngine Wayland Compositor Session
+Exec=/usr/bin/animus-compositor
+TryExec=/usr/bin/animus-compositor
+Type=Application
+DesktopNames=vitusOS
+Keywords=wayland;compositor;animus;vitusos;

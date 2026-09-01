@@ -1,0 +1,168 @@
+# ==============================================================================
+# vitusOS "Grand Payload" Master Package List (Ubuntu 24.04 LTS Base)
+# Target ISO Size: ~8-10 GB (Uncompressed RootFS: ~25-30 GB)
+# ==============================================================================
+
+# --- Linux Kernel & Hardware Firmware ---
+linux-generic-hwe-24.04
+linux-headers-generic-hwe-24.04
+linux-firmware
+intel-microcode
+amd64-microcode
+bcmwl-kernel-source
+dkms
+
+# --- GPU Graphics & Vulkan Subsystems ---
+# NVIDIA Proprietary & Compute
+nvidia-driver-550
+nvidia-utils-550
+libnvidia-compute-550
+libnvidia-decode-550
+libnvidia-encode-550
+libnvidia-gl-550
+libnvidia-extra-550
+nvidia-prime
+nvidia-settings
+
+# Mesa Open Graphics (AMD / Intel / Panfrost / VirtIO)
+mesa-va-drivers
+mesa-vdpau-drivers
+mesa-vulkan-drivers
+libvulkan1
+vulkan-tools
+libgl1-mesa-dri
+libglx-mesa0
+libegl-mesa0
+intel-media-va-driver-non-free
+libva-drm2
+libva-wayland2
+libva-x11-2
+vainfo
+vdpauinfo
+
+# --- Wayland & Display Infrastructure ---
+seatd
+libseat1
+libwlroots-0.17-dev
+wayland-protocols
+libwayland-client0
+libwayland-server0
+libwayland-cursor0
+libwayland-egl1
+libxkbcommon0
+libinput10
+libinput-bin
+libevdev2
+libdisplay-info1
+xwayland
+
+# --- Audio Subsystem (PipeWire & Spatial Audio) ---
+pipewire
+pipewire-audio
+pipewire-alsa
+pipewire-pulse
+pipewire-jack
+pipewire-v4l2
+libspa-0.2-bluetooth
+libspa-0.2-modules
+wireplumber
+libwireplumber-0.5-0
+gstreamer1.0-pipewire
+pavucontrol
+alsa-utils
+rtkit
+
+# --- Universal Media Codecs & GStreamer ---
+ffmpeg
+gstreamer1.0-plugins-base
+gstreamer1.0-plugins-good
+gstreamer1.0-plugins-bad
+gstreamer1.0-plugins-ugly
+gstreamer1.0-libav
+gstreamer1.0-vaapi
+libavcodec-extra
+libavformat-extra
+libde265-0
+libheif1
+libavif16
+libjxl-devtools
+libopenh264-7
+
+# --- Typography & Comprehensive Font Matrix ---
+fonts-inter
+fonts-noto-core
+fonts-noto-cjk
+fonts-noto-cjk-extra
+fonts-noto-color-emoji
+fonts-roboto
+fonts-jetbrains-mono
+fonts-firacode
+fonts-font-awesome
+fonts-dejavu-core
+fonts-liberation2
+
+# --- Application Runtimes & Toolkits ---
+flatpak
+libflatpak0
+xdg-desktop-portal
+xdg-desktop-portal-wlr
+xdg-desktop-portal-gtk
+xdg-utils
+xdg-user-dirs
+libgtk-4-1
+libgtk-3-0
+qt6-base-dev
+qt6-wayland
+libqt6core6t64
+libqt6gui6t64
+libqt6widgets6t64
+
+# --- Network, Bluetooth, & Wireless Stacks ---
+network-manager
+network-manager-openvpn
+network-manager-wireguard
+wireguard-tools
+wpasupplicant
+bluez
+bluez-tools
+bluez-cups
+modemmanager
+rfkill
+curl
+wget
+ca-certificates
+openssh-client
+
+# --- System & Storage Utilities ---
+systemd
+systemd-sysv
+dbus
+dbus-user-session
+polkitd
+libpam-systemd
+btrfs-progs
+e2fsprogs
+xfsprogs
+dosfstools
+ntfs-3g
+parted
+gdisk
+util-linux
+cryptsetup
+squashfs-tools
+zstd
+pv
+rsync
+htop
+neofetch
+
+# --- Live Boot Infrastructure ---
+casper
+lupin-casper
+discover
+laptop-detect
+os-prober
+grub-efi-amd64-signed
+grub-pc-bin
+shim-signed
+efibootmgr
