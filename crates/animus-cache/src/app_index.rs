@@ -274,4 +274,111 @@ impl AppIndexCache {
         scored_results.sort_by(|a, b| b.0.cmp(&a.0));
         scored_results.into_iter().map(|(_, e)| e).collect()
     }
+
+    /// Scans standard Linux XDG application directories for installed .desktop files.
+    pub fn scan_installed_desktop_files(&self) {
+        #[cfg(target_os = "linux")]
+        {
+            use std::fs;
+            use std::path::Path;
+
+            let search_dirs = [
+                "/usr/share/applications",
+                "/usr/local/share/applications",
+                "/var/lib/flatpak/exports/share/applications",
+                "/var/lib/snapd/desktop/applications",
+            ];
+
+            let mut discovered = Vec::new();
+
+            for dir in search_dirs {
+                let path = Path::new(dir);
+                if let Ok(entries) = fs::read_dir(path) {
+                    for entry in entries.flatten() {
+                        let file_path = entry.path();
+                        if file_path.extension().and_then(|s| s.to_str()) == Some("desktop") {
+                            if let Ok(content) = fs::read_to_string(&file_path) {
+                                if let Some(app) = Self::parse_desktop_file(&file_path.to_string_lossy(), &content) {
+                                    discovered.push(app);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            let mut map = self.entries.write();
+            for app in discovered {
+                map.entry(app.app_id.clone()).or_insert(app);
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn parse_desktop_file(path: &str, content: &str) -> Option<AppEntry> {
+        let mut name = None;
+        let mut comment = String::new();
+        let mut exec = None;
+        let mut icon = String::new();
+        let mut keywords = Vec::new();
+        let mut nodisplay = false;
+
+        let mut in_desktop_entry = false;
+
+        for line in content.lines() {
+            let line = line.trim();
+            if line.starts_with('[') && line.ends_with(']') {
+                in_desktop_entry = line == "[Desktop Entry]";
+                continue;
+            }
+
+            if !in_desktop_entry || line.starts_with('#') || !line.contains('=') {
+                continue;
+            }
+
+            let parts: Vec<&str> = line.splitn(2, '=').collect();
+            let key = parts[0].trim();
+            let value = parts[1].trim();
+
+            match key {
+                "Name" if name.is_none() => name = Some(value.to_string()),
+                "Comment" if comment.is_empty() => comment = value.to_string(),
+                "Exec" if exec.is_none() => exec = Some(value.to_string()),
+                "Icon" if icon.is_empty() => icon = value.to_string(),
+                "NoDisplay" => nodisplay = value.eq_ignore_ascii_case("true"),
+                "Keywords" => {
+                    keywords.extend(value.split(';').map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()));
+                }
+                _ => {}
+            }
+        }
+
+        if nodisplay || name.is_none() || exec.is_none() {
+            return None;
+        }
+
+        let app_id = std::path::Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        Some(AppEntry {
+            app_id,
+            display_name: name.unwrap(),
+            description: if comment.is_empty() { "Native Application".to_string() } else { comment },
+            publisher: "Installed System".to_string(),
+            version: "1.0".to_string(),
+            icon_path: if icon.is_empty() { "/usr/share/icons/vitusos/app.png".to_string() } else { icon },
+            exec_path: exec.unwrap(),
+            keywords,
+            available_formats: vec![PackageFormat::Deb],
+            selected_format: PackageFormat::Deb,
+            install_state: InstallState::Installed,
+            install_progress: 1.0,
+            install_error: None,
+            webview_url: None,
+            screenshot_urls: Vec::new(),
+        })
+    }
 }
