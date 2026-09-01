@@ -8,6 +8,7 @@ pub mod lock_screen;
 pub mod login_manager;
 pub mod panel;
 pub mod shutdown_screen;
+pub mod system_screen;
 pub mod welcome_screen;
 
 pub use ae_shell_protocol::{AEShellProtocolManager, AESurfaceState};
@@ -20,4 +21,6 @@ pub use lock_screen::LockScreen;
 pub use login_manager::{AELoginManager, UserProfile};
 pub use panel::Panel;
 pub use shutdown_screen::{PowerAction, ShutdownScreen};
+pub use system_screen::{SystemScreen, SystemScreenMode, RESTART_MESSAGE, SHUTDOWN_MESSAGE};
 pub use welcome_screen::{WelcomeScreen, WizardStep};
+

@@ -162,6 +162,8 @@ pub enum AEEvent {
     NetworkStatusChanged { connected: bool, ssid: Option<String> },
     LidClosed,
     SystemSleep,
+    SystemShutdown,
+    SystemRestart,
     DisplaySleep,
     DisplayWake,
 

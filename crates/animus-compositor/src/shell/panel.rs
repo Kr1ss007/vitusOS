@@ -40,7 +40,7 @@ impl Panel {
         Self {
             height: Self::HEIGHT,
             orange_box: OrangeBoxButton::default(),
-            focused_app_title: "Finder".to_string(),
+            focused_app_title: "Filer".to_string(),
             is_clock_visible: true,
         }
     }
