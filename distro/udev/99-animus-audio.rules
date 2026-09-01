@@ -1,0 +1,9 @@
+# vitusOS Low-Latency Audio & Sound Card Hardware Rules
+
+# ALSA Sound Nodes & DSP Devices
+SUBSYSTEM=="sound", GROUP="audio", MODE="0660", TAG+="uaccess"
+KERNEL=="snd/*", GROUP="audio", MODE="0660", TAG+="uaccess"
+
+# Real-Time Clock & High Precision Event Timers
+KERNEL=="rtc0", GROUP="audio", MODE="0660"
+KERNEL=="hpet", GROUP="audio", MODE="0660"

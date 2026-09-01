@@ -1,0 +1,16 @@
+# vitusOS Hardware Encryption Vault (HEV) & Biometric Auth Rules
+
+# TPM 2.0 Access
+KERNEL=="tpm[0-9]*", GROUP="tss", MODE="0660", TAG+="uaccess"
+KERNEL=="tpmrm[0-9]*", GROUP="tss", MODE="0660", TAG+="uaccess"
+
+# FIDO2 / U2F Hardware Security Keys (YubiKey, SoloKeys, Nitrokey)
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1050", MODE="0664", GROUP="plugdev", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="beee", MODE="0664", GROUP="plugdev", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="20a0", MODE="0664", GROUP="plugdev", TAG+="uaccess"
+
+# Fingerprint Readers & Sensors (libfprint)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="06cb", MODE="0664", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="27c6", MODE="0664", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="138a", MODE="0664", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="04f3", ATTRS{idProduct}=="0c*", MODE="0664", GROUP="plugdev", TAG+="uaccess"

@@ -1,0 +1,9 @@
+[Unit]
+Description=vitusOS User Desktop Session
+Documentation=https://github.com/Kr1ss007/vitusOS
+BindsTo=graphical-session.target
+Wants=graphical-session-pre.target
+After=graphical-session-pre.target
+
+[Install]
+Alias=current-graphical-session.target
