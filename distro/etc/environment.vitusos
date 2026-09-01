@@ -1,0 +1,36 @@
+# ==============================================================================
+# vitusOS Universal System Environment Profile
+# ==============================================================================
+
+# Desktop Session Identification
+XDG_CURRENT_DESKTOP=vitusOS
+XDG_SESSION_TYPE=wayland
+XDG_SESSION_DESKTOP=vitusOS
+DESKTOP_SESSION=vitusOS
+
+# Vulkan 1.3 Direct Scanout & Compositor
+WLR_RENDERER=vulkan
+WLR_NO_HARDWARE_CURSORS=0
+ANIMUS_VULKAN_VALIDATION=0
+ANIMUS_LOG_LEVEL=info
+
+# Toolkit Integration (Wayland-Native)
+GDK_BACKEND=wayland,x11
+QT_QPA_PLATFORM=wayland;xcb
+QT_WAYLAND_DISABLE_WINDOWDECORATION=1
+QT_AUTO_SCREEN_SCALE_FACTOR=1
+MOZ_ENABLE_WAYLAND=1
+ELECTRON_OZONE_PLATFORM_HINT=wayland
+CLUTTER_BACKEND=wayland
+SDL_VIDEODRIVER=wayland
+
+# Hardware Graphics Acceleration
+LIBVA_DRIVER_NAME=nvidia
+GBM_BACKEND=nvidia-drm
+__GLX_VENDOR_LIBRARY_NAME=nvidia
+__GL_GSYNC_ALLOWED=1
+__GL_VRR_ALLOWED=1
+
+# Audio & Media
+PIPEWIRE_LATENCY=128/48000
+GST_PLUGIN_FEATURE_RANK=vaapi:MAX,nvcodec:MAX

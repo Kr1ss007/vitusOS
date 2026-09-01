@@ -1,0 +1,14 @@
+[Unit]
+Description=vitusOS Control Center & Telemetry Daemon
+Documentation=https://github.com/Kr1ss007/vitusOS
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/vitusos-native --surface control-center
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=vitusos-session.target

@@ -1,0 +1,11 @@
+#%PAM-1.0
+# ==============================================================================
+# vitusOS LockScreen PAM Configuration (AESurfaces LockScreen)
+# ==============================================================================
+
+auth        [success=2 default=ignore] pam_fprintd.so max_tries=3 timeout=10
+auth        [success=1 default=ignore] pam_unix.so nullok try_first_pass
+auth        requisite                  pam_deny.so
+auth        required                   pam_permit.so
+
+account     required                   pam_unix.so

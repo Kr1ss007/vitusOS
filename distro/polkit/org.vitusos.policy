@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<policyconfig>
+  <vendor>vitusOS Architecture Team</vendor>
+  <vendor_url>https://github.com/Kr1ss007/vitusOS</vendor_url>
+
+  <!-- Power Management (Shutdown, Reboot, Suspend) -->
+  <action id="org.vitusos.power.reboot">
+    <description>Reboot the system</description>
+    <message>Authentication is required to reboot the system</message>
+    <defaults>
+      <allow_any>yes</allow_any>
+      <allow_inactive>yes</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+
+  <action id="org.vitusos.power.poweroff">
+    <description>Power off the system</description>
+    <message>Authentication is required to power off the system</message>
+    <defaults>
+      <allow_any>yes</allow_any>
+      <allow_inactive>yes</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+
+  <!-- Storage & Drive Partitioning in Live Installer -->
+  <action id="org.vitusos.storage.partition">
+    <description>Format and partition block storage devices</description>
+    <message>Authentication is required to modify storage partitions</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+
+  <!-- Hardware Encryption Vault Key Sealing -->
+  <action id="org.vitusos.hev.seal">
+    <description>Seal HEV credentials into TPM 2.0 PCR registers</description>
+    <message>Authentication is required to seal encryption keys</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+</policyconfig>
