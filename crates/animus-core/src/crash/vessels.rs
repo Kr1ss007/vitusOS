@@ -80,22 +80,24 @@ impl Vessels {
             } else {
                 return;
             }
-            // Snapshot current states to avoid overlapping borrow
-            let states_map: HashMap<String, VesselState> = vessels
-                .iter()
-                .map(|(k, v)| (k.clone(), v.state))
+            // Phase 1: Identify isolated vessels whose dependencies are all Running
+            let ready_names: Vec<String> = vessels
+                .values()
+                .filter(|v| {
+                    v.state == VesselState::Isolated
+                        && v.depends_on.iter().all(|dep| {
+                            vessels.get(dep).map(|d| d.state) == Some(VesselState::Running)
+                        })
+                })
+                .map(|v| v.name.clone())
                 .collect();
 
+            // Phase 2: Mutate only the matching vessels
             let mut can_restore = Vec::new();
-            for (_v_name, v) in vessels.iter_mut() {
-                if v.state == VesselState::Isolated {
-                    let all_deps_running = v.depends_on.iter().all(|dep| {
-                        states_map.get(dep).copied() == Some(VesselState::Running)
-                    });
-                    if all_deps_running {
-                        v.state = VesselState::Running;
-                        can_restore.push(v.clone());
-                    }
+            for ready_name in ready_names {
+                if let Some(v) = vessels.get_mut(&ready_name) {
+                    v.state = VesselState::Running;
+                    can_restore.push(v.clone());
                 }
             }
             can_restore
