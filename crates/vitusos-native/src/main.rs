@@ -3,7 +3,7 @@
 use animus_core::event_bus::EventBus;
 use std::env;
 use tracing::info;
-use vitusos_native::{FilerDaemon, PackageManager, Pathfinder, SettingsManager, ZenBrowserManager};
+use vitusos_native::{FilerDaemon, PackageManager, Pathfinder, SettingsApp, Terminow, ZenBrowserManager};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -38,10 +38,15 @@ async fn main() -> anyhow::Result<()> {
                     let _pathfinder = Pathfinder::new(cache, bus.clone());
                     info!("Pathfinder initialized with active query state.");
                 }
+                "terminow" => {
+                    info!("Starting Terminow GPU-accelerated terminal...");
+                    let term = Terminow::new(bus.clone());
+                    info!("Terminow initialized: {} active tab(s).", term.tabs.read().len());
+                }
                 "settings" => {
                     info!("Starting Settings application...");
-                    let settings = SettingsManager::new(bus.clone());
-                    info!("Current Release Channel: {:?}", settings.system_info.read().ota_channel);
+                    let settings = SettingsApp::new(bus.clone());
+                    info!("Current Release Channel: {:?}", settings.state.read().active_channel);
                 }
                 "zen-browser" => {
                     info!("Starting Zen Browser native Wayland integration...");
@@ -62,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
             println!("Usage: vitusos-native [OPTIONS]");
             println!("Options:");
             println!("  --surface <panel|dock|control-center|all>  Launch native shell surface");
-            println!("  --app <filer|pathfinder|settings|zen-browser|package-manager>  Launch application");
+            println!("  --app <filer|pathfinder|terminow|settings|zen-browser|package-manager>  Launch application");
         }
     }
 

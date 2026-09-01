@@ -42,6 +42,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "1.0"
 anyhow = "1.0"
+dirs = "5.0"
 
 # Math & Color
 glam = { version = "0.29", features = ["serde"] }
