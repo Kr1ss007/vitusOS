@@ -65,6 +65,8 @@ pub struct TerminalTab {
     pub cursor_row: usize,
     pub lines: Vec<String>,
     pub command_history: Vec<String>,
+    pub master_fd: Option<i32>,
+    pub child_pid: Option<i32>,
 }
 
 impl TerminalTab {
@@ -77,7 +79,7 @@ impl TerminalTab {
         initial_lines.push("".to_string());
         initial_lines.push("aturing@vitusOS:~$ ".to_string());
 
-        Self {
+        let mut tab = Self {
             id,
             title: title.into(),
             working_dir: working_dir.into(),
@@ -87,6 +89,46 @@ impl TerminalTab {
             cursor_row: 4,
             lines: initial_lines,
             command_history: Vec::new(),
+            master_fd: None,
+            child_pid: None,
+        };
+
+        tab.spawn_pty_process();
+        tab
+    }
+
+    pub fn spawn_pty_process(&mut self) {
+        #[cfg(unix)]
+        {
+            use nix::pty::openpty;
+            use nix::unistd::{fork, ForkResult, setsid, dup2};
+            use std::ffi::CString;
+
+            if let Ok(pty) = openpty(None, None) {
+                match unsafe { fork() } {
+                    Ok(ForkResult::Parent { child }) => {
+                        self.master_fd = Some(pty.master);
+                        self.child_pid = Some(child.as_raw());
+                        info!("Terminow: Spawned real PTY child PID {} on master fd {}", child, pty.master);
+                    }
+                    Ok(ForkResult::Child) => {
+                        let _ = setsid();
+                        let slave = pty.slave;
+                        unsafe {
+                            let _ = dup2(slave, 0);
+                            let _ = dup2(slave, 1);
+                            let _ = dup2(slave, 2);
+                        }
+                        let shell = CString::new("/bin/bash").unwrap_or_default();
+                        let args = [shell.clone()];
+                        let _ = nix::unistd::execvp(&shell, &args);
+                        std::process::exit(1);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Terminow: Fork failed: {}", e);
+                    }
+                }
+            }
         }
     }
 
@@ -97,6 +139,14 @@ impl TerminalTab {
         let last_idx = self.lines.len() - 1;
         self.lines[last_idx].push_str(text);
         self.cursor_col += text.chars().count();
+
+        #[cfg(unix)]
+        {
+            if let Some(fd) = self.master_fd {
+                use nix::unistd::write;
+                let _ = write(fd, text.as_bytes());
+            }
+        }
     }
 
     pub fn new_line(&mut self) {
@@ -109,6 +159,16 @@ impl TerminalTab {
         let trimmed = input.trim();
         self.command_history.push(trimmed.to_string());
         self.new_line();
+
+        #[cfg(unix)]
+        {
+            if let Some(fd) = self.master_fd {
+                use nix::unistd::write;
+                let mut cmd_bytes = input.as_bytes().to_vec();
+                cmd_bytes.push(b'\n');
+                let _ = write(fd, &cmd_bytes);
+            }
+        }
 
         match trimmed {
             "help" => {
