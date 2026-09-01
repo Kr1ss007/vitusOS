@@ -1,0 +1,118 @@
+# master package manifest for vitusOS (Upstream Color & Upstream One)
+# Out of The Box (OOTB) Master Manifest
+
+[meta]
+distribution = "vitusOS"
+base_suite = "noble"
+architecture = "amd64"
+target_size_gb = "8.5"
+
+[kernel_and_boot]
+packages = [
+    "linux-image-6.8.0-noble",
+    "linux-headers-6.8.0-noble",
+    "linux-firmware",
+    "intel-microcode",
+    "amd64-microcode",
+    "efibootmgr",
+    "grub-efi-amd64-bin",
+    "shim-signed"
+]
+
+[gpu_drivers]
+packages = [
+    "mesa-vulkan-drivers",
+    "mesa-va-drivers",
+    "mesa-vdpau-drivers",
+    "libvulkan1",
+    "vulkan-tools",
+    "libgl1-mesa-dri",
+    "libglx-mesa0",
+    "intel-media-va-driver-non-free",
+    "nvidia-driver-560"
+]
+
+[audio_and_dsp]
+packages = [
+    "pipewire",
+    "pipewire-pulse",
+    "pipewire-alsa",
+    "pipewire-jack",
+    "wireplumber",
+    "libspa-0.2-bluetooth",
+    "alsa-utils",
+    "sound-theme-freedesktop"
+]
+
+[network_and_bluetooth]
+packages = [
+    "network-manager",
+    "wpasupplicant",
+    "bluez",
+    "bluez-tools",
+    "iw",
+    "rfkill",
+    "curl",
+    "wget"
+]
+
+[security_and_vault]
+packages = [
+    "tpm2-tools",
+    "tpm2-abrmd",
+    "libpam-runtime",
+    "libpam-fprintd",
+    "fprintd",
+    "polkitd",
+    "cryptsetup",
+    "argon2"
+]
+
+[codecs_and_media]
+packages = [
+    "ffmpeg",
+    "gstreamer1.0-plugins-base",
+    "gstreamer1.0-plugins-good",
+    "gstreamer1.0-plugins-bad",
+    "gstreamer1.0-plugins-ugly",
+    "gstreamer1.0-libav",
+    "libavcodec-extra"
+]
+
+[desktop_and_wayland]
+packages = [
+    "wayland-protocols",
+    "libwayland-client0",
+    "libwayland-server0",
+    "libwayland-cursor0",
+    "libwayland-egl1",
+    "libinput10",
+    "libseat1",
+    "libgbm1",
+    "libdrm2",
+    "xdg-desktop-portal",
+    "xdg-desktop-portal-wlr",
+    "xdg-user-dirs",
+    "xdg-utils"
+]
+
+[package_ecosystems]
+packages = [
+    "flatpak",
+    "snapd",
+    "appstream",
+    "libglib2.0-bin"
+]
+
+[bundled_applications]
+packages = [
+    "zen-browser",
+    "bash",
+    "zsh",
+    "git",
+    "build-essential",
+    "python3",
+    "nodejs",
+    "htop",
+    "neofetch"
+]

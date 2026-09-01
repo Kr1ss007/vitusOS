@@ -14,3 +14,5 @@ serde_json.workspace = true
 tracing.workspace = true
 glam.workspace = true
 zeroize = { workspace = true, features = ["alloc"] }
+zbus.workspace = true
+

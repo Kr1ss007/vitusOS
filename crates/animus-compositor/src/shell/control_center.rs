@@ -87,6 +87,28 @@ impl ControlCenter {
         info!("ControlCenter: Toggled reduced motion -> {}", enabled);
     }
 
+    pub fn toggle_wifi(&self) {
+        let mut s = self.state.write();
+        s.is_wifi_enabled = !s.is_wifi_enabled;
+        let enabled = s.is_wifi_enabled;
+        info!("ControlCenter: Toggled Wi-Fi -> {}", enabled);
+        let dbus = animus_core::dbus::SystemDbusManager::new();
+        tokio::spawn(async move {
+            dbus.network.set_wifi_enabled(enabled).await;
+        });
+    }
+
+    pub fn toggle_bluetooth(&self) {
+        let mut s = self.state.write();
+        s.is_bluetooth_enabled = !s.is_bluetooth_enabled;
+        let enabled = s.is_bluetooth_enabled;
+        info!("ControlCenter: Toggled Bluetooth -> {}", enabled);
+        let dbus = animus_core::dbus::SystemDbusManager::new();
+        tokio::spawn(async move {
+            dbus.bluetooth.set_powered(enabled).await;
+        });
+    }
+
     pub fn update(&self, dt: f32) {
         self.reveal_progress.write().update(dt);
     }

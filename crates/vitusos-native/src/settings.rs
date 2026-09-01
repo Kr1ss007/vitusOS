@@ -4,12 +4,14 @@
 //! Features 9 comprehensive system preference sections, Spring-driven sidebar navigation,
 //! and live system state synchronization.
 
+use animus_core::dbus::SystemDbusManager;
 use animus_core::event_bus::EventBus;
 use animus_core::events::AEEvent;
 use animus_physics::spring::{SpringProfile, SpringSolver};
 use animus_render::altitude::SurfaceAltitude;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tracing::info;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,6 +145,7 @@ pub struct SettingsApp {
     pub current_section: RwLock<SettingsSection>,
     pub selection_pill_y: RwLock<SpringSolver>, // SPRING_SELECTION (400, 28)
     pub state: RwLock<SystemSettingsState>,
+    pub dbus: Arc<SystemDbusManager>,
     bus: EventBus,
 }
 
@@ -153,6 +156,7 @@ impl SettingsApp {
             current_section: RwLock::new(SettingsSection::Appearance),
             selection_pill_y: RwLock::new(SpringSolver::new(36.0, SpringProfile::Selection)),
             state: RwLock::new(SystemSettingsState::default()),
+            dbus: Arc::new(SystemDbusManager::new()),
             bus,
         }
     }
@@ -190,7 +194,22 @@ impl SettingsApp {
     pub fn set_volume(&self, vol: f32) {
         let mut s = self.state.write();
         s.output_volume = vol.clamp(0.0, 1.0);
+        self.dbus.audio.set_volume(s.output_volume);
         self.bus.publish(AEEvent::VolumeChanged { volume: s.output_volume, muted: false });
+    }
+
+    pub fn toggle_wifi(&self, enabled: bool) {
+        let dbus = self.dbus.clone();
+        tokio::spawn(async move {
+            dbus.network.set_wifi_enabled(enabled).await;
+        });
+    }
+
+    pub fn toggle_bluetooth(&self, powered: bool) {
+        let dbus = self.dbus.clone();
+        tokio::spawn(async move {
+            dbus.bluetooth.set_powered(powered).await;
+        });
     }
 
     pub fn update(&self, dt: f32) {

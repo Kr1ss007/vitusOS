@@ -1,5 +1,6 @@
 pub mod context;
 pub mod crash;
+pub mod dbus;
 pub mod engine;
 pub mod eobus;
 pub mod event_bus;
@@ -13,6 +14,7 @@ pub mod state;
 
 pub use context::{AnimusContext, ContextOriginType};
 pub use crash::{CrashManager, CrashSite, FirstResponder, GlobalFeed, Handshakes, PressureLevel, ResourceSnapshot, SubsystemHealth, Vessel, VesselState, Vessels};
+pub use dbus::{AudioDbusClient, BluetoothDbusClient, LogindDbusClient, NetworkDbusClient, SystemDbusManager};
 pub use engine::AnimusEngine;
 pub use eobus::{EOBus, OutsiderStatus};
 pub use event_bus::EventBus;
@@ -23,3 +25,4 @@ pub use power::PowerManager;
 pub use registry::{RegistryManager, RegistrySchema, RegistryValue};
 pub use sound::{AudioBackend, AudioSinkInfo, SoundEngine, sounds};
 pub use state::{StateManager, state_keys};
+
