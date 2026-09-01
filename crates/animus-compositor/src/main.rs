@@ -21,7 +21,8 @@ use animus_render::vulkan_context::VulkanContext;
 use animus_render::wallpaper_sampler::WallpaperTintSampler;
 use shell::{
     AEShellProtocolManager, AELoginManager, BootCrossfade, CockpitView, ControlCenter, Dock,
-    DockItem, GlobalMenu, LockScreen, Panel, ShutdownScreen, SystemScreen, WelcomeScreen,
+    DockItem, GlobalMenu, LockScreen, NotificationCenter, Panel, ShutdownScreen, SystemScreen,
+    WelcomeScreen,
 };
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
@@ -43,6 +44,7 @@ pub struct CompositorContext {
     pub login_manager: AELoginManager,
     pub lock_screen: LockScreen,
     pub control_center: ControlCenter,
+    pub notification_center: NotificationCenter,
     pub shutdown_screen: ShutdownScreen,
     pub system_screen: SystemScreen,
     pub ae_shell_proto: AEShellProtocolManager,
@@ -69,6 +71,7 @@ impl CompositorContext {
         let login_manager = AELoginManager::new(bus.clone());
         let lock_screen = LockScreen::new(bus.clone());
         let control_center = ControlCenter::new(bus.clone());
+        let notification_center = NotificationCenter::new(bus.clone());
         let shutdown_screen = ShutdownScreen::new(bus.clone());
         let system_screen = SystemScreen::new(bus.clone());
         let ae_shell_proto = AEShellProtocolManager::new(bus.clone());
@@ -99,6 +102,7 @@ impl CompositorContext {
             login_manager,
             lock_screen,
             control_center,
+            notification_center,
             shutdown_screen,
             system_screen,
             ae_shell_proto,
@@ -122,6 +126,7 @@ impl CompositorContext {
         self.login_manager.update(dt);
         self.lock_screen.update(dt);
         self.control_center.update(dt);
+        self.notification_center.update(dt);
         self.shutdown_screen.update(dt);
         self.system_screen.update(dt);
         self.workspace_manager.update(dt);

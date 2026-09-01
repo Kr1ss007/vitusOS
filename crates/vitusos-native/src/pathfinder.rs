@@ -45,10 +45,43 @@ impl Pathfinder {
 
     pub fn placeholder(&self) -> &'static str {
         if self.has_opened_before {
-            "Search victusOS"
+            "Search vitusOS"
         } else {
             "what are you looking for?"
         }
+    }
+
+    /// Evaluates mathematical expressions inline (Spotlight-grade calculator).
+    pub fn evaluate_calculation(query: &str) -> Option<String> {
+        let trimmed = query.trim();
+        // Match simple binary arithmetic expressions (e.g. "128 * 144", "256 + 512", "1024 / 8")
+        let ops = ['+', '-', '*', '/'];
+        for op in ops {
+            if let Some(pos) = trimmed.find(op) {
+                let left_str = trimmed[..pos].trim();
+                let right_str = trimmed[pos + 1..].trim();
+                if let (Ok(lhs), Ok(rhs)) = (left_str.parse::<f64>(), right_str.parse::<f64>()) {
+                    let result = match op {
+                        '+' => lhs + rhs,
+                        '-' => lhs - rhs,
+                        '*' => lhs * rhs,
+                        '/' => {
+                            if rhs == 0.0 {
+                                return Some("Division by zero".to_string());
+                            }
+                            lhs / rhs
+                        }
+                        _ => return None,
+                    };
+                    return Some(if result.fract() == 0.0 {
+                        format!("{:.0}", result)
+                    } else {
+                        format!("{:.4}", result)
+                    });
+                }
+            }
+        }
+        None
     }
 
     pub fn open(&mut self) {
