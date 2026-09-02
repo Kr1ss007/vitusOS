@@ -10,4 +10,3 @@ Thumbs.db
 *.log
 /build/
 /assets/packages/
-/spec doc/

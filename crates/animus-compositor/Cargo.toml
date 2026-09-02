@@ -31,3 +31,17 @@ tracing-subscriber.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 zeroize = { workspace = true, features = ["alloc"] }
+
+# Compositor Engine
+[target.'cfg(target_os = "linux")'.dependencies]
+smithay.workspace = true
+wayland-server.workspace = true
+wayland-protocols.workspace = true
+drm.workspace = true
+drm-fourcc.workspace = true
+gbm.workspace = true
+input.workspace = true
+ash.workspace = true
+shaderc.workspace = true
+pam.workspace = true
+
