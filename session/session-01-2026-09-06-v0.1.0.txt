@@ -1,0 +1,277 @@
+================================================================================
+VITUSOS ARCHITECTURE & IMPLEMENTATION SESSION LOG
+FILE: session/session-01-2026-09-06-v0.1.0.txt
+SESSION ID: 01
+DATE: 2026-09-06
+VERSION: v0.1.0 (Target: Upstream Color Grand Payload ISO)
+COMMIT RANGE: 5e5e42b (Initial commit) -> 8118855 (Current HEAD)
+ENVIRONMENT: Linux 6.6+ PREEMPT_RT / WSL2 Host / Bare Metal UEFI x86_64
+AUTHOR: vitusOS Core Architecture Team & Antigravity
+================================================================================
+
+1. EXECUTIVE SUMMARY & REPOSITORY CONTEXT
+--------------------------------------------------------------------------------
+vitusOS is a macOS-grade, bare-metal, Wayland-native operating system built from
+scratch in Rust, C11, GLSL, and pure UEFI C. The system is engineered around a
+hardened, fault-tolerant, high-performance two-process architecture powered by
+the AnimusEngine (AE) compositing and animation pipeline, Vulkan 1.3 scanout,
+Smithay Wayland protocol infrastructure, Hardware Enclave Vault (HEV), and
+proprietary internal communication buses (EventBus and EOBus).
+
+This document serves as the canonical record of everything built, refactored,
+hardened, and integrated from the initial zero-state commit up to the current
+production state (v0.1.0).
+
+
+2. CORE ARCHITECTURAL FOUNDATIONS & DIRECTIVE PIVOTS
+--------------------------------------------------------------------------------
+2.1 Architectural Rename: OSF -> AnimusEngine (AE)
+    - Historical Context: Early architecture documents referred to the compositing
+      and shell surface protocol as "OSF" (Operating System Foundation / Shell Framework).
+    - Directive Pivot: All references to OSF were formally deprecated and renamed to
+      AnimusEngine (AE) throughout the entire codebase.
+    - Updated Interfaces:
+      * Wayland Protocol: protocol/ae-shell-v1.xml (defining `ae_shell_v1` and `ae_surface_v1`)
+      * Global Menu: AEMenuRegistered protocol and dispatch structs
+      * Compositor Surfaces: AESurface, AEShellRole (Panel, Dock, Overlay, Window, Dialog)
+      * IPC Bridge: AEBridge (`/run/vitusos/ae-ipc.sock`)
+      * Boot Service: animus-early C11 KMS splash screen
+
+2.2 The Two-Process Architecture (Specification Document Part 28)
+    vitusOS explicitly separates session management from display compositing into
+    two distinct Linux processes for fault-isolation, security privilege separation,
+    and uninterrupted frame delivery:
+
+    Process 1: `vitusos-session`
+    ---------------------------
+    - Managed by: systemd user unit `vitusos-session.service` (Wants=graphical-session-pre.target)
+    - Subsystems Owned:
+      * Hardware Enclave & Vault (HEV): AES-256-GCM + Argon2id encryption for user keys
+      * StateManager: JSON/disk state persistence for session, window geometry, user prefs
+      * EventBus (Session-Side): Core message bus dispatching system state changes
+      * EOBus (EventOutsiderBus): vitusOS-owned gateway for 3rd-party and sandboxed processes
+      * SeaDrop: Device discovery and zero-configuration P2P asset transfer
+      * RegistryManager (Session-Side): System-wide setting & capability registry
+      * CrashManager (Session-Side): Vessel DAG, FirstResponder recovery coordinator
+    - Failure Tolerance: If the graphical compositor crashes, `vitusos-session` stays
+      alive. User application data, background tasks, encrypted vaults, and network
+      transfers remain uninterrupted while the compositor restarts.
+
+    Process 2: `vitusos-compositor`
+    ------------------------------
+    - Managed by: systemd user unit `animus-compositor.service` (After=vitusos-session.service)
+    - Subsystems Owned:
+      * AnimusEngine: Animation and spring-physics orchestrator
+      * Vulkan 1.3 Render Pipeline: Raw ash/shaderc 7-layer CompositorRenderer
+      * Smithay Wayland Engine: wl_compositor, xdg_shell, ae-shell-v1 protocol globals
+      * Calloop Event Loop: 144Hz frame timer, Wayland socket, udev DRM backend, libinput seat
+      * WindowManager: Floating and tiling window placement, focus DAG, z-order stack
+      * WorkspaceManager: Multi-workspace isolation, spatial transitions
+      * ShellController: Single centralized event routing and shell state dispatch point
+      * Shell Surfaces: Top Panel (Global Menu), Dock (Gaussian magnification), Cockpit View
+        (Mission Control/Expose), Control Center, Notifications, Lock/Welcome/Shutdown screens
+    - Performance Guarantee: Compositor executes in a dedicated event loop at 144Hz with
+      zero D-Bus blocking, delegating system daemon queries to `vitusos-session`.
+
+2.3 Internal vs External Communication Architecture
+    vitusOS strictly differentiates between internal communication pipelines and
+    external Linux platform daemons:
+
+    A. EventBus (Internal Core Bus)
+       - Proprietary vitusOS intra-process and intra-session messaging bus.
+       - Built on lock-free crossbeam channels and parking_lot RwLocks.
+       - Dispatches typed `VitusEvent` variants (Window, Workspace, Shell, Power, Media, Audio).
+       - Zero external daemon dependencies, microsecond latency.
+
+    B. EOBus - EventOutsiderBus (External App Gateway)
+       - Proprietary vitusOS IPC gateway for external and third-party applications.
+       - Allows outside binaries to communicate into the vitusOS shell ecosystem
+         without exposing direct raw memory or unrestricted system APIs.
+       - Implements token-based caller registration, namespace access control,
+         rate-limiting, and sanitized event forwarding into EventBus.
+       - NOT D-Bus. Completely vitusOS-native design.
+
+    C. AEBridge (Cross-Process Session <-> Compositor Bridge)
+       - Production Unix Domain Socket: `/run/vitusos/ae-ipc.sock`.
+       - Length-prefixed binary wire framing:
+         [4-byte Magic: 0xAEB1] [4-byte Payload Length Big-Endian] [JSON/Bincode Payload]
+       - Bidirectional non-blocking streaming with background RX threads in both processes.
+       - Clean, real Linux socket implementation with zero dummy stubs or cfg(unix) mock fallbacks.
+
+    D. D-Bus (zbus System Integration)
+       - Strictly used as an external adapter to query and command Linux system daemons:
+         * `org.freedesktop.NetworkManager`: WiFi SSID scanning, IP configuration, connection state
+         * `org.bluez`: Bluetooth adapter power, device pairing, discovery
+         * `org.freedesktop.login1`: Session power state, suspend, hibernate, reboot, poweroff
+         * PulseAudio / PipeWire: System audio sink volume, mute state, default routing
+
+
+3. ZERO-TO-CURRENT SUBSYSTEM CODEBASE AUDIT
+--------------------------------------------------------------------------------
+The repository currently contains 10 workspace crates, an EFI bootloader, 9 GLSL
+shaders, systemd service units, udev rules, PAM stack configuration, and ISO tooling:
+
+3.1 `crates/animus-physics`
+    - Purpose: Physics-based animation engine driving all UI motion.
+    - Key Files:
+      * `src/spring.rs`: 4th-Order Runge-Kutta (RK4) numerical integrator for spring dynamics.
+        Configurable stiffness, damping ratio, mass, velocity, target, and settle tolerance.
+      * `src/animation_engine.rs`: Animation controller orchestrating active spring channels,
+        decay animations, and 144Hz tick synchronization.
+      * `src/clock.rs`: High-precision monotonic frame clock.
+
+3.2 `crates/animus-render`
+    - Purpose: Hardware-accelerated Vulkan 1.3 rendering and CPU software fallback.
+    - Key Files:
+      * `src/gpu/vulkan.rs`: Raw Vulkan 1.3 initialization via `ash` bindings. VkInstance,
+        VkPhysicalDevice, VkDevice, Swapchain, command buffers, and descriptor sets.
+      * `src/pipeline.rs`: 7-layer compositing pipeline (Wallpaper -> Desktop Surfaces ->
+        Windows -> Floating Panels -> Dock -> Cockpit Overlay -> System Modal / Lock).
+      * `src/framebuffer.rs`: ScanoutFramebuffer CPU rasterizer supporting Kawase blur,
+        squircle SDF drawing, and drop shadow blitting into scanout buffers.
+      * `src/squircle.rs`: G2 continuous curvature super-ellipse SDF rasterizer.
+      * `src/font_manager.rs` & `src/typography.rs`: FontBook text rasterizer utilizing
+        `fontdue`, `ttf-parser`, and `rustybuzz` for Unicode shaping and subpixel rendering.
+      * `src/glyph_atlas.rs`: Dynamic GPU texture atlas caching rendered glyphs.
+      * `src/smithay_renderer.rs`: Smithay GL/Gles/Glow render bridge.
+
+3.3 `crates/animus-core`
+    - Purpose: System-wide foundation, cross-process IPC, crash recovery, and state management.
+    - Key Files:
+      * `src/ae_bridge.rs`: Unix Domain Socket IPC between `vitusos-session` and `vitusos-compositor`.
+      * `src/event_bus.rs`: In-memory thread-safe publish-subscribe EventBus.
+      * `src/eobus.rs`: EventOutsiderBus client registration and message sanitizer.
+      * `src/state.rs`: StateManager handling disk persistence (`/home/{user}/.config/vitusos/state.json`).
+      * `src/crash/`: Complete CrashManager suite:
+        - `vessels.rs`: Directed Acyclic Graph (DAG) of system components and recovery ordering.
+        - `first_responder.rs`: Emergency crash detection, SIGSEGV/SIGABRT handling, core dumps.
+        - `handshakes.rs`: Liveness heartbeats between session and compositor.
+        - `crash_site.rs`: Black-box crash log recorder with hardware register snapshots.
+      * `src/dbus/`: Real `zbus` clients for NetworkManager, BlueZ, audio, and logind.
+      * `src/clipboard.rs` & `src/drag.rs`: Wayland clipboard & drag-and-drop state machines.
+      * `src/accessibility.rs`: Screen reader, high contrast, and accessibility hooks.
+
+3.4 `crates/animus-compositor`
+    - Purpose: Production Wayland compositor binary and shell surface orchestrator.
+    - Key Files:
+      * `src/main.rs`: Compositor entry point with 4 Calloop event sources (144Hz timer,
+        Wayland socket, udev device hotplug, libinput seat).
+      * `src/session.rs`: `vitusos-session` runner initializing HEV, StateManager, and EventBus.
+      * `src/shell_controller.rs`: Central event dispatch routing input events to active surfaces.
+      * `src/compositor_renderer.rs`: 7-layer scanout compositor combining Vulkan and Smithay.
+      * `src/window_manager.rs` & `src/window.rs`: XDG shell toplevel management, stacking, tiling.
+      * `src/workspace.rs`: Multi-workspace isolation and animated spatial transitions.
+      * `src/shell/`: Complete set of macOS-grade desktop components:
+        - `global_menu.rs`: AEMenuRegistered Top Panel with active app title and application menus.
+        - `dock.rs`: Spring-magnified bottom dock with live app status indicators.
+        - `cockpit_view.rs`: Mission Control / Expose workspace and window grid overview.
+        - `control_center.rs`: Quick toggles for WiFi, Bluetooth, Audio, Display brightness.
+        - `notifications.rs`: Interactive notification toast stack.
+        - `lock_screen.rs`, `welcome_screen.rs`, `shutdown_screen.rs` ("Goodbye" screen).
+
+3.5 `crates/animus-hev`
+    - Purpose: Hardware Enclave & Vault for security, credentials, and cryptographic storage.
+    - Key Files:
+      * `src/hev.rs`: Master HEV controller interfacing with TPM 2.0 / secure storage.
+      * `src/vault.rs`: AES-256-GCM authenticated encryption with Argon2id password hashing.
+      * Memory safety: All sensitive buffers wrapped in `zeroize::ZeroizeOnDrop`.
+
+3.6 `crates/animus-cache`
+    - Purpose: Multi-tier system cache management.
+    - Key Files:
+      * `src/cache_keepr.rs`: Central cache eviction coordinator monitoring system memory pressure.
+      * `src/app_index.rs`: Freedesktop `.desktop` parser indexing installed software OOTB.
+      * `src/glyph_cache.rs`, `src/shader_cache.rs`, `src/snapshot_cache.rs`, `src/tint_cache.rs`.
+
+3.7 `crates/animus-appkit`
+    - Purpose: Native widget toolkit for first-party vitusOS applications.
+    - Components:
+      * Layouts: `Stack`, `Row`, `Column`, `Grid`, `Surface`, `Sheet`, `Popover`, `Tooltip`, `ContextMenu`.
+      * Widgets: `Button`, `TextField`, `Slider`, `Toggle`, `Scrollbar`.
+
+3.8 `crates/vitusos-native`
+    - Purpose: Authentic first-party desktop applications.
+    - Apps:
+      * `filer.rs`: 3-zone macOS Finder-grade file manager with sidebar, breadcrumbs, and preview.
+      * `terminow.rs`: GPU-accelerated terminal emulator using real Unix PTY (`openpty`, `fork`, `execvp`).
+      * `settings.rs` & `settings_render.rs`: 9-section system configuration control center.
+      * `pathfinder.rs`: Spotlight search with real-time math calculation and app launching.
+      * `zen_browser.rs`: Integration launcher injecting Wayland environment variables.
+
+3.9 `crates/vitusos-installer`
+    - Purpose: Bare-metal setup assistant and disk installer.
+    - Features: AESurface setup wizard, disk partitioning (GPT/ESP/Root), EFI loader deployment.
+
+3.10 `bootloader` (AnimusBoot.efi)
+    - Pure C UEFI bootloader compliant with UEFI 2.8+.
+    - Initializes GOP (Graphics Output Protocol), draws splash screen, injects kernel cmdline.
+
+3.11 `shaders` (9 GLSL Shaders)
+    - Production GLSL shaders: Kawase blur (downsample/upsample), Squircle SDF rasterizer,
+      Drop shadows, Glassmorphism, Saturation/Contrast adjustment, Vignette, Bloom.
+
+3.12 `distro` (Linux Distribution Packaging & Systemd)
+    - Systemd units: `vitusos-session.service`, `animus-compositor.service`, `vitusos-session.target`.
+    - Udev rules: `99-vitusos-audio.rules`, `99-vitusos-vault.rules`.
+    - PAM configuration: `/etc/pam.d/vitusos-login`.
+    - Polkit rules: `50-vitusos.rules`.
+    - Grand Payload ISO Builder: PowerShell script generating bootable live/install medium.
+
+
+4. COMPLETE GIT COMMIT HISTORY (ZERO TO CURRENT HEAD)
+--------------------------------------------------------------------------------
+1. 5e5e42b: Initial commit: vitusOS production architecture (Upstream Color channel)
+   - Baseline workspace setup with all initial crate definitions and manifest.
+2. 742018d: feat: implement Bare Metal Boot Handoff, CrashManager suite (Vessels DAG,
+   FirstResponder, GlobalFeed, Handshakes, CrashSite), RegistryManager, and MotionWave gestures
+3. c3d6c92: fix(crash): resolve borrow checker error in mark_restored using two-phase collect
+4. 053bb5a: feat(distro): add 8-10GB Grand Payload ISO builder, udev rules, systemd units,
+   and release channel docs
+5. bca0ed1: feat(distro): add vitusos-session.target, audio/vault udev rules, and PowerShell ISO builder
+6. 65ad423: feat(installer): implement macOS-grade Setup Assistant & Bare-Metal Installer
+   with AnimusEngine AESurfaces
+7. 0f99831: chore: update Cargo.lock for vitusos-installer dependencies
+8. d20115c: feat(arch): implement pure C AnimusBoot.efi UEFI bootloader, PAM stack, Polkit rules,
+   user services, and native dispatcher
+9. 6cb8778: chore: sync Cargo.lock
+10. 0b959c7: fix(uefi): add self-contained UEFI 2.8+ specification headers for cross-platform
+    IDE analysis and compilation
+11. 19b6595: feat(simulation): add full macOS-grade 7-phase end-to-end boot and architecture
+    simulation runner
+12. a377a8c: feat(shell): implement SystemScreen (blackout shutdown/restart with 'goodbye' text),
+    Filer title, and SystemShutdown events
+13. 3381b72: feat(desktop): implement macOS-grade Squircle G2 continuous curvature,
+    NotificationCenter toast stack, Spotlight calculator, and full aesthetic pipeline
+14. 0f869fe: feat(desktop): add authentic top panel SVG icons, Freedesktop .desktop app
+    discovery, and zero-mock package indexing
+15. 54668e6: feat(native): implement production Filer 3-zone manager, Terminow GPU terminal,
+    9-section SettingsApp, and Pathfinder Zen Browser integration
+16. 0f639aa: feat(core): add 9 production GLSL shaders, D-Bus system integration
+    (NetworkManager/BlueZ/Audio/Logind), and OOTB master package manifest
+17. 2cd8cfa: feat(terminow): add Unix PTY allocation (openpty, fork, setsid, execvp) and shell pipeline
+18. 6387945: feat(system): add osf-shell-v1 Wayland protocol, animus-early C11 service, and
+    diurnal Space Orange wallpapers
+19. 62df3d0: fix(protocol): enforce canonical ae-shell-v1 Wayland protocol and AESurface terminology
+20. 77992f5: feat(render): implement ScanoutFramebuffer with Kawase glass blur, squircle SDF
+    rasterizer, and 7-layer RenderPipeline
+21. babd225: feat(system): implement real process spawning in ZenBrowser & Dock, disk persistence
+    in StateManager, and PipeWire sound dispatching
+22. 11e9baa: feat: implement backend abstraction and Wayland display registry with initial
+    Winit and Vulkan support structures
+23. 8118855 (HEAD): feat(core): production AEBridge Unix IPC, real process spawning, native
+    AEMenuRegistered Global Menu, Wayland client connection, and smithay-client-toolkit integration
+
+
+5. CURRENT STATE & HEALTH VERIFICATION
+--------------------------------------------------------------------------------
+- Compilation: Validated clean `cargo check --workspace` on Linux/WSL2 host.
+  Zero compile errors.
+- Target Architecture: Linux x86_64, Wayland / DRM / Vulkan.
+- Inter-Process Communication: Fully operational AEBridge Unix Domain Socket.
+- Shell & Surfaces: Complete 7-layer compositor hierarchy implemented.
+- Security: Real AES-GCM + Argon2id cryptographic vault in animus-hev.
+- Packaging: Automated Grand Payload ISO generator ready for deployment testing.
+
+================================================================================
+END OF SESSION LOG 01
+================================================================================

@@ -1,0 +1,257 @@
+================================================================================
+VITUSOS CHANGELOG & DEPENDENCY AUDIT
+FILE: changelog/changelog-01-2026-09-06-v0.1.0.txt
+RELEASE ID: 01
+DATE: 2026-09-06
+VERSION: v0.1.0 (Target: Upstream Color Grand Payload ISO)
+SCOPE: Initial Zero State -> Production v0.1.0 (Commit 5e5e42b -> 8118855)
+AUTHOR: vitusOS Core Architecture Team & Antigravity
+================================================================================
+
+1. DEPENDENCY AUDIT & RATIONALE
+--------------------------------------------------------------------------------
+Every external dependency in vitusOS was chosen to satisfy strict performance,
+safety, latency, and hardware control requirements. Below is the complete audit:
+
+1.1 Core Asynchronous Runtime & Concurrency
+    * tokio (v1.40, features = ["full"]):
+      - Purpose: Asynchronous runtime for secondary system workers, background I/O,
+        and D-Bus integration.
+      - Rationale: High-throughput async runtime for non-realtime I/O tasks.
+    * parking_lot (v0.12):
+      - Purpose: Spin-adaptive Mutex, RwLock, and Condvar primitives.
+      - Rationale: Substantially smaller memory footprint (1 byte vs 40 bytes) and
+        orders of magnitude lower lock contention overhead than std::sync::Mutex.
+    * crossbeam-channel (v0.5):
+      - Purpose: Zero-allocation, high-throughput MPMC message channels.
+      - Rationale: Powers EventBus inter-thread dispatch with bounded latency guarantees.
+    * calloop (v0.14) & calloop-wayland-source (v0.4):
+      - Purpose: Core compositor event loop.
+      - Rationale: Unlike tokio, calloop is specifically designed for graphical display
+        servers, multiplexing timerfd (144Hz frame pacing), signalfd, epoll (Wayland client
+        connections), and udev/libinput file descriptors without runtime jitter or thread-hopping.
+
+1.2 Security, Cryptography & Vault Primitives
+    * argon2 (v0.5):
+      - Purpose: Memory-hard password hashing and key derivation function (KDF) for HEV.
+      - Rationale: RFC 9106 compliant Argon2id variant prevents GPU and ASIC brute-force attacks.
+    * aes-gcm (v0.10):
+      - Purpose: Authenticated Encryption with Associated Data (AEAD) using AES-256-GCM.
+      - Rationale: Hardware-accelerated (via AES-NI instructions) authenticated encryption
+        ensuring confidentiality and integrity of persisted user credentials.
+    * zeroize (v1.8, features = ["derive", "zeroize_derive"]):
+      - Purpose: Secure memory wiping.
+      - Rationale: Guarantees cryptographic keys, master secrets, and plaintext passwords
+        are zeroed out in RAM upon drop, immune to compiler dead-code elimination.
+    * subtle (v2.6):
+      - Purpose: Constant-time comparison operations for authentication tokens and hashes.
+      - Rationale: Eliminates timing side-channel attacks during credential verification.
+
+1.3 Compositing, Rendering & GPU Architecture
+    * smithay (v0.6, features = ["wayland_frontend", "backend_drm", "backend_gbm",
+      "backend_egl", "backend_winit", "backend_libinput", "backend_udev",
+      "wayland-protocols", "renderer_gl", "renderer_glow", "use_system_lib"]):
+      - Purpose: Low-level Wayland server protocol implementation, seat/input handling,
+        DRM/KMS modesetting, and GBM buffer allocation.
+      - Rationale: Modern modular Rust Wayland engine providing direct bare-metal hardware
+        access without legacy X11 baggage.
+    * ash (v0.38, features = ["linked"]):
+      - Purpose: Raw Vulkan 1.3 API bindings.
+      - Rationale: Zero-overhead, 1:1 direct Vulkan calls (VkInstance, VkPhysicalDevice,
+        VkDevice, VkSwapchainKHR, VkPipeline) giving vitusOS absolute control over GPU
+        command submission, memory synchronization, and scanout presentation.
+    * shaderc (v0.8):
+      - Purpose: Runtime GLSL to SPIR-V shader compiler (Google shaderc / glslang).
+      - Rationale: Enables dynamic shader hot-reloading and direct runtime compilation
+        of the 9 production GLSL shaders (Kawase blur, Squircle SDF, etc.) on target hardware.
+
+1.4 System Daemon Integration & IPC
+    * zbus (v5.1, features = ["tokio"]):
+      - Purpose: D-Bus client library connecting to Linux platform daemons.
+      - Rationale: Communicates with NetworkManager, BlueZ, systemd-logind, and audio servers.
+      - NOTE: Strictly used for external Linux daemons. vitusOS internal communication
+        exclusively uses EventBus, EOBus, and AEBridge.
+    * nix (v0.29, features = ["process", "signal", "fs", "term"]):
+      - Purpose: Direct POSIX syscall interface.
+      - Rationale: Provides real Unix PTY allocation (`openpty`), process execution (`fork`,
+        `setsid`, `execvp`), and signal handling for Terminow and native app spawning.
+
+1.5 Typography, Shaping & Text Layout
+    * fontdue (v0.9):
+      - Purpose: Ultra-fast SIMD font rasterization.
+      - Rationale: 5x-10x faster glyph rasterization than FreeType with pristine subpixel coverage.
+    * ttf-parser (v0.25):
+      - Purpose: Zero-allocation TrueType / OpenType font binary parser.
+      - Rationale: Safe parsing of font metrics, tables, and glyph boundaries.
+    * rustybuzz (v0.20):
+      - Purpose: Complete HarfBuzz text shaping engine in 100% pure Rust.
+      - Rationale: Full Unicode complex script shaping (kerning, ligatures, bi-directional text).
+
+1.6 Math, Serialization & Databases
+    * glam (v0.29, features = ["serde"]):
+      - Purpose: SIMD vector and matrix math (Vec2, Vec3, Vec4, Mat4, Quat).
+      - Rationale: Powers spring dynamics, 3D surface transforms, and spatial transitions.
+    * serde (v1.0) & serde_json (v1.0):
+      - Purpose: Structured data serialization.
+      - Rationale: State persistence, configuration files, and AEBridge IPC wire payloads.
+    * rusqlite (v0.32, features = ["bundled"]):
+      - Purpose: Embedded SQL database engine.
+      - Rationale: Fast indexed metadata storage for Pathfinder Spotlight search and app discovery.
+
+1.7 Native C / System Libraries
+    * libwayland-server & libwayland-client (v1.22+)
+    * libdrm (v2.4.115+) & libgbm
+    * libinput (v1.21+) & libudev
+    * PAM (libpam0g-dev) & Polkit (polkit-1)
+    * musl-gcc: Static compiler for `animus-early.c` early-initramfs KMS display banner.
+
+
+2. WHAT'S NEW (ZERO -> v0.1.0)
+--------------------------------------------------------------------------------
+2.1 Compositor & Display Engine (`crates/animus-compositor`)
+    * Real Smithay 0.6 Wayland Compositor Engine:
+      - Canonical `ae-shell-v1` protocol implementation with custom AESurface roles.
+      - Full Calloop event loop driven by 144Hz monotonic timer (`calloop::timer::Timer`).
+      - Real udev DRM device hotplug monitor and libinput seat (`udev_seat.rs`).
+      - Backend abstraction supporting Bare Metal DRM/KMS scanout and development Winit windowing.
+    * 7-Layer CompositorRenderer:
+      - Strictly ordered compositing stack:
+        1. Layer 1: Diurnal Space Orange Wallpaper
+        2. Layer 2: Desktop Surfaces (AEShellRole::Desktop)
+        3. Layer 3: Application Windows (Tiling & Floating XDG surfaces)
+        4. Layer 4: Top Panel & Global Menu (AEShellRole::Panel)
+        5. Layer 5: Magnified Dock (AEShellRole::Dock)
+        6. Layer 6: Cockpit View / Mission Control Overlay (AEShellRole::Overlay)
+        7. Layer 7: Modal Alerts, Lock Screen, and Goodbye Shutdown Screen
+    * Shell Controller:
+      - Central event dispatcher routing keyboard, pointer, and gesture events to active surfaces.
+      - WorkspaceManager supporting multi-workspace spatial switching with spring transitions.
+      - WindowManager handling window focus DAG, z-order reordering, and snap-to-edge tiling.
+    * Shell Surfaces:
+      - Authentic Top Panel with AEMenuRegistered Global Menu (File, Edit, View, Window, Help).
+      - Bottom Dock featuring real-time Gaussian magnification math and running dot indicators.
+      - Cockpit View providing an aerial overview of all open windows across workspaces.
+      - Notification Center with stacking toasts and swipe-to-dismiss physics.
+      - Control Center with quick toggles for WiFi, Bluetooth, Sound, and Display brightness.
+      - Goodbye Shutdown Screen displaying smooth blackout transition with graceful poweroff.
+
+2.2 Core & IPC Architecture (`crates/animus-core`)
+    * AEBridge Unix Domain Socket IPC:
+      - Production Unix socket at `/run/vitusos/ae-ipc.sock`.
+      - Binary wire protocol with 4-byte magic (0xAEB1) and 4-byte length prefix.
+      - Non-blocking bidirectional communication connecting `vitusos-session` and `vitusos-compositor`.
+    * EventBus (Internal) & EOBus (EventOutsiderBus):
+      - EventBus: Intra-process typed pub/sub bus with microsecond latency.
+      - EOBus: vitusOS-owned gateway for 3rd-party and sandboxed processes with token authentication.
+    * CrashManager Architecture:
+      - Complete fault-tolerance suite: Vessels DAG, FirstResponder signal handlers,
+        Handshake liveness monitors, and CrashSite persistent flight recorder.
+    * StateManager:
+      - Real filesystem persistence of workspace configuration, open window layouts, and user prefs.
+    * Linux Platform D-Bus Clients:
+      - Real `zbus` integrations for NetworkManager, BlueZ, PipeWire/PulseAudio, and systemd-logind.
+
+2.3 Physics & Animation Engine (`crates/animus-physics`)
+    * 4th-Order Runge-Kutta (RK4) Spring Dynamics:
+      - Physics-based smooth animation with adjustable stiffness, damping ratio, and mass.
+      - High-precision settle detection preventing unnecessary GPU redraws when springs rest.
+    * Continuous 144Hz Animation Clock.
+
+2.4 Rendering, Shaders & Typography (`crates/animus-render` & `shaders/`)
+    * Raw Vulkan 1.3 Pipeline (`ash`):
+      - Direct hardware initialization, command pool allocation, and presentation swapchain.
+    * 9 Production GLSL Shaders:
+      - Kawase dual-filter downsample & upsample shaders for silky glassmorphism blur.
+      - Squircle G2 continuous curvature signed distance field (SDF) rasterizer.
+      - Drop shadows, Saturation, Contrast, Vignette, and Bloom post-processing shaders.
+    * FontBook & Typography:
+      - Multi-level FontManager with Unicode HarfBuzz shaping (`rustybuzz`) and `fontdue` rasterization.
+      - Dynamic GPU GlyphAtlas caching rendered characters.
+
+2.5 Security & Enclave (`crates/animus-hev`)
+    * Hardware Enclave & Vault:
+      - AES-256-GCM authenticated encryption protecting master user keys and secrets.
+      - Argon2id key derivation resisting brute-force attacks.
+      - `ZeroizeOnDrop` automated memory scrubbing.
+
+2.6 Native Desktop Suite (`crates/vitusos-native`)
+    * Filer: 3-zone macOS Finder-grade file manager with sidebar, breadcrumbs, and preview.
+    * Terminow: GPU-accelerated terminal with real Unix PTY (`openpty`, `fork`, `execvp`).
+    * SettingsApp: 9-section system configuration control center.
+    * Pathfinder: Spotlight-style search bar with real-time arithmetic calculations.
+    * Zen Browser: Production browser launcher with automatic Wayland socket injection.
+
+2.7 Native Widget Toolkit (`crates/animus-appkit`)
+    * Complete UI framework: Stack, Row, Column, Grid, Sheet, Popover, Tooltip, ContextMenu,
+      Button, TextField, Slider, Toggle, and Scrollbar.
+
+2.8 Bootloader & Linux Distro (`bootloader/` & `distro/`)
+    * AnimusBoot.efi: Pure C UEFI 2.8+ bootloader with GOP graphics and kernel handoff.
+    * Systemd units: `vitusos-session.service`, `animus-compositor.service`, `vitusos-session.target`.
+    * Udev rules for audio and vault hardware access.
+    * PAM stack configuration (`/etc/pam.d/vitusos-login`).
+    * Polkit security rules (`50-vitusos.rules`).
+    * PowerShell Grand Payload ISO generator building bootable installation media.
+
+
+3. WHAT'S FIXED & ARCHITECTURAL DIRECTIVES
+--------------------------------------------------------------------------------
+3.1 Architectural Pivot: OSF -> AnimusEngine (AE)
+    - ISSUE: Inconsistent naming across legacy documentation and protocol files referring
+      to "OSF" (Operating System Foundation).
+    - FIX: Systematically pivoted and renamed all symbols, files, and Wayland protocols
+      to AnimusEngine (AE).
+    - IMPACT: Protocol standardized as `protocol/ae-shell-v1.xml`, IPC bridge named `ae_bridge.rs`,
+      and surface abstraction named `AESurface`.
+
+3.2 Production AEBridge IPC (Nuked Mock Stubs)
+    - ISSUE: Early development iterations had simulated fallback stubs with `cfg(unix)`
+      that broke or caused confusion when building across different environments.
+    - FIX: Overwrote `crates/animus-core/src/ae_bridge.rs` with the true, production-grade
+      Unix Domain Socket IPC implementation. Since vitusOS compiles on Linux / WSL2,
+      all dummy mocks and fake stubs were completely eliminated.
+    - IMPACT: Real cross-process binary communication over `/run/vitusos/ae-ipc.sock`.
+
+3.3 D-Bus vs EventBus / EOBus Separation
+    - ISSUE: Ambiguity regarding the role of D-Bus and z-bus within vitusOS internals.
+    - FIX: Enforced strict architectural rule: D-Bus (`zbus`) is strictly an external adapter
+      for Linux system daemons (NetworkManager, BlueZ, logind, PipeWire). VitusOS internal
+      communication is exclusively handled by EventBus (intra-process) and EOBus (third-party gateway).
+    - IMPACT: Zero D-Bus overhead or latency on the 144Hz compositor render loop.
+
+3.4 Borrow Checker Error in `CrashManager::mark_restored`
+    - ISSUE: Rust borrow checker error caused by simultaneous mutable and immutable borrows
+      during DAG graph traversal in `vessels.rs`.
+    - FIX: Implemented two-phase collection pattern: collect vessel IDs into an intermediate
+      vector before mutating state.
+    - IMPACT: Clean compilation of the entire `animus-core::crash` module.
+
+3.5 Native PTY Allocation in Terminow
+    - ISSUE: Early terminal implementation simulated shell output with hardcoded strings.
+    - FIX: Implemented authentic POSIX PTY allocation using `nix::pty::openpty`, `fork`,
+      `setsid`, and `execvp("/bin/bash")`.
+    - IMPACT: Full interactive bash shell running directly in Terminow on Linux.
+
+3.6 Zen Browser Process Spawning
+    - ISSUE: Browser launch button previously printed debug logs without spawning.
+    - FIX: Implemented real process launching via `std::process::Command` passing
+      `MOZ_ENABLE_WAYLAND=1` and `WAYLAND_DISPLAY=wayland-0`.
+    - IMPACT: Zen Browser launches as a native Wayland client window inside vitusOS.
+
+3.7 UEFI Specification Header Self-Containment
+    - ISSUE: Bootloader development encountered missing platform headers when analyzed
+      in cross-platform IDE environments.
+    - FIX: Added self-contained UEFI 2.8+ specification headers in `bootloader/uefi_spec.h`.
+    - IMPACT: Clean UEFI compilation and static analysis without external SDK dependencies.
+
+
+4. KNOWN LIMITATIONS & UPCOMING ROADMAP
+--------------------------------------------------------------------------------
+- Real Bare Metal GPU Scanout: Vulkan and Smithay backends are fully compiled and wired;
+  upcoming milestone will validate on physical AMDGPU and Intel hardware rigs.
+- ISO Payload Packaging: Distro packaging scripts exist in PowerShell; upcoming work will
+  provide a native bash/WSL2 automated build pipeline for generating the 8-10GB Grand Payload.
+
+================================================================================
+END OF CHANGELOG 01
+================================================================================
