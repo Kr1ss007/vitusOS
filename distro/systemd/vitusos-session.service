@@ -1,0 +1,28 @@
+[Unit]
+Description=vitusOS Session Process
+Documentation=https://github.com/vitusOS/vitusos
+After=dbus.service pipewire.service wireplumber.service
+Wants=dbus.service pipewire.service
+Before=animus-compositor.service
+Requires=dbus.service
+
+[Service]
+Type=simple
+Environment=XDG_CURRENT_DESKTOP=vitusOS
+Environment=XDG_SESSION_TYPE=wayland
+Environment=ANIMUS_LOG=info
+ExecStart=/usr/bin/vitusos-session
+Restart=on-failure
+RestartSec=1s
+WatchdogSec=10s
+StandardOutput=journal
+StandardError=journal
+User=vitus
+Group=vitus
+SupplementaryGroups=video render input audio plugdev
+
+# Resource Limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=graphical.target

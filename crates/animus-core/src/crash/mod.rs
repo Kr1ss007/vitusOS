@@ -1,8 +1,9 @@
-//! CrashManager Subsystem (Part 21 of specification).
+//! CrashManager Subsystem (Part 21 & 23 of specification).
 //!
 //! Subsystem for fault detection, dependency blast radius isolation, and recovery.
 
 pub mod crash_site;
+pub mod crash_state;
 pub mod event_handler;
 pub mod first_responder;
 pub mod global_feed;
@@ -13,6 +14,7 @@ use std::sync::Arc;
 use tracing::info;
 
 pub use crash_site::{AppCrashRecord, CrashSite};
+pub use crash_state::{CrashStateBlock, CRASHDUMP_MAGIC};
 pub use event_handler::{CrashEventHandler, Severity};
 pub use first_responder::FirstResponder;
 pub use global_feed::{GlobalFeed, PressureLevel, ResourceSnapshot};
@@ -49,15 +51,14 @@ impl CrashManager {
         }
     }
 
-    /// Initializes all fault-detection layers before engine start.
     pub fn initialize(&self) {
         info!("CrashManager: Initializing fault detection and isolation suite...");
+        CrashStateBlock::initialize();
         self.first_responder.initialize();
         self.global_feed.start();
         self.handshakes.start();
     }
 
-    /// Stops all background monitoring threads.
     pub fn destroy(&self) {
         self.global_feed.stop();
         self.handshakes.stop();

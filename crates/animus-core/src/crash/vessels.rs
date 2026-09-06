@@ -179,6 +179,32 @@ impl Vessels {
     }
 
     fn register_canonical_vessels(&self) {
+        // Core infrastructure (no dependencies, never "dead")
+        self.register_vessel(Vessel {
+            name: "EventBus".to_string(),
+            state: VesselState::Running,
+            depends_on: Vec::new(),
+            on_isolate: None,
+            on_restore: None,
+        });
+
+        self.register_vessel(Vessel {
+            name: "StateManager".to_string(),
+            state: VesselState::Running,
+            depends_on: vec!["EventBus".to_string()],
+            on_isolate: None,
+            on_restore: None,
+        });
+
+        self.register_vessel(Vessel {
+            name: "AnimationEngine".to_string(),
+            state: VesselState::Running,
+            depends_on: Vec::new(),
+            on_isolate: None,
+            on_restore: None,
+        });
+
+        // Compositor and rendering pipeline
         self.register_vessel(Vessel {
             name: "Compositor".to_string(),
             state: VesselState::Running,
@@ -268,6 +294,67 @@ impl Vessels {
             })),
             on_restore: Some(Arc::new(|| {
                 info!("SoundEngine: Audio pipeline restored.");
+            })),
+        });
+
+        // Additional vessels from FIX3-08
+        self.register_vessel(Vessel {
+            name: "DesktopManager".to_string(),
+            state: VesselState::Running,
+            depends_on: vec!["StateManager".to_string(), "AnimationEngine".to_string()],
+            on_isolate: Some(Arc::new(|| {
+                warn!("DesktopManager: Isolated. Desktop switching disabled.");
+            })),
+            on_restore: Some(Arc::new(|| {
+                info!("DesktopManager: Desktop switching restored.");
+            })),
+        });
+
+        self.register_vessel(Vessel {
+            name: "MotionWave".to_string(),
+            state: VesselState::Running,
+            depends_on: vec!["EventBus".to_string()],
+            on_isolate: Some(Arc::new(|| {
+                warn!("MotionWave: Isolated. All gestures disabled.");
+            })),
+            on_restore: Some(Arc::new(|| {
+                info!("MotionWave: Gestures re-enabled.");
+            })),
+        });
+
+        self.register_vessel(Vessel {
+            name: "PanelManager".to_string(),
+            state: VesselState::Running,
+            depends_on: vec!["RenderPipeline".to_string(), "EventBus".to_string()],
+            on_isolate: Some(Arc::new(|| {
+                warn!("PanelManager: Isolated. Panels hidden.");
+            })),
+            on_restore: Some(Arc::new(|| {
+                info!("PanelManager: Panels re-shown.");
+            })),
+        });
+
+        self.register_vessel(Vessel {
+            name: "OrangeBoxMenu".to_string(),
+            state: VesselState::Running,
+            depends_on: vec!["PanelManager".to_string()],
+            on_isolate: Some(Arc::new(|| {
+                warn!("OrangeBoxMenu: Isolated. Orange box click does nothing.");
+            })),
+            on_restore: Some(Arc::new(|| {
+                info!("OrangeBoxMenu: Functional again.");
+            })),
+        });
+
+        self.register_vessel(Vessel {
+            name: "SystemScreen".to_string(),
+            state: VesselState::Running,
+            depends_on: vec!["RenderPipeline".to_string()],
+            on_isolate: Some(Arc::new(|| {
+                warn!("SystemScreen: Isolated. Shutdown/restart shows black.");
+            })),
+            on_restore: Some(Arc::new(|| {
+                info!("SystemScreen: Shutdown screen functional.");
             })),
         });
     }

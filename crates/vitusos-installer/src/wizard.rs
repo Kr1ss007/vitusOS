@@ -86,7 +86,7 @@ impl SetupWizard {
             if next_step == WizardStep::Installing && self.telemetry_rx.is_none() {
                 let (tx, rx) = mpsc::unbounded_channel();
                 self.telemetry_rx = Some(rx);
-                self.engine.start_install(tx);
+                self.engine.start_install(tx, "/dev/nvme0n1", &self.account.username, &self.password_input);
             }
 
             info!("SetupWizard: Advanced to step: {:?}", self.current_step);

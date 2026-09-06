@@ -65,6 +65,8 @@ pub struct TerminalTab {
     pub cursor_row: usize,
     pub lines: Vec<String>,
     pub command_history: Vec<String>,
+    #[cfg(unix)]
+    #[serde(skip)]
     pub master_fd: Option<i32>,
     pub child_pid: Option<i32>,
 }
@@ -89,6 +91,7 @@ impl TerminalTab {
             cursor_row: 4,
             lines: initial_lines,
             command_history: Vec::new(),
+            #[cfg(unix)]
             master_fd: None,
             child_pid: None,
         };
@@ -105,19 +108,23 @@ impl TerminalTab {
             use std::ffi::CString;
 
             if let Ok(pty) = openpty(None, None) {
+                use std::os::unix::io::{AsRawFd, FromRawFd};
                 match unsafe { fork() } {
                     Ok(ForkResult::Parent { child }) => {
-                        self.master_fd = Some(pty.master);
+                        let master_raw = pty.master.as_raw_fd();
+                        // Leak the master fd so it stays alive — we own it as raw i32
+                        std::mem::forget(pty.master);
+                        self.master_fd = Some(master_raw);
                         self.child_pid = Some(child.as_raw());
-                        info!("Terminow: Spawned real PTY child PID {} on master fd {}", child, pty.master);
+                        info!("Terminow: Spawned real PTY child PID {}", child);
                     }
                     Ok(ForkResult::Child) => {
                         let _ = setsid();
-                        let slave = pty.slave;
+                        let slave_raw = pty.slave.as_raw_fd();
                         unsafe {
-                            let _ = dup2(slave, 0);
-                            let _ = dup2(slave, 1);
-                            let _ = dup2(slave, 2);
+                            let _ = dup2(slave_raw, 0);
+                            let _ = dup2(slave_raw, 1);
+                            let _ = dup2(slave_raw, 2);
                         }
                         let shell = CString::new("/bin/bash").unwrap_or_default();
                         let args = [shell.clone()];
@@ -144,7 +151,9 @@ impl TerminalTab {
         {
             if let Some(fd) = self.master_fd {
                 use nix::unistd::write;
-                let _ = write(fd, text.as_bytes());
+                use std::os::fd::{BorrowedFd, AsFd};
+                let bfd = unsafe { BorrowedFd::borrow_raw(fd) };
+                let _ = write(bfd, text.as_bytes());
             }
         }
     }
@@ -164,9 +173,11 @@ impl TerminalTab {
         {
             if let Some(fd) = self.master_fd {
                 use nix::unistd::write;
+                use std::os::fd::BorrowedFd;
+                let bfd = unsafe { BorrowedFd::borrow_raw(fd) };
                 let mut cmd_bytes = input.as_bytes().to_vec();
                 cmd_bytes.push(b'\n');
-                let _ = write(fd, &cmd_bytes);
+                let _ = write(bfd, &cmd_bytes);
             }
         }
 
@@ -202,7 +213,8 @@ impl TerminalTab {
 }
 
 pub struct Terminow {
-    pub altitude: SurfaceAltitude, // Mid (20px Kawase Blur, 82% Opacity)
+    pub surface: crate::AENativeSurface,
+    pub content: RwLock<animus_appkit::layout::surface::AEContent>,
     pub tabs: RwLock<Vec<TerminalTab>>,
     pub active_tab_idx: RwLock<usize>,
     pub cursor_pulse: RwLock<SpringSolver>, // SPRING_SELECTION (400, 28)
@@ -214,9 +226,15 @@ pub struct Terminow {
 
 impl Terminow {
     pub fn new(bus: EventBus) -> Self {
+        let mut surface = crate::AENativeSurface::new("terminow", "Terminow");
+        let _ = surface.connect();
+        
+        surface.set_menu_json(r#"{"items": [{"label": "Terminow"}, {"label": "File"}, {"label": "Edit"}, {"label": "View"}]}"#);
+        
         let initial_tab = TerminalTab::new("bash", "~");
         Self {
-            altitude: SurfaceAltitude::Mid,
+            surface,
+            content: RwLock::new(animus_appkit::layout::surface::AEContent { x: 0.0, y: 0.0, width: 800.0, height: 600.0 }),
             tabs: RwLock::new(vec![initial_tab]),
             active_tab_idx: RwLock::new(0),
             cursor_pulse: RwLock::new(SpringSolver::new(1.0, SpringProfile::Selection)),

@@ -18,6 +18,23 @@ pub mod sounds {
     pub const DRAG: &str = "drag";
     pub const DROP: &str = "drop";
     pub const EJECT: &str = "eject";
+    // Part 36 additions:
+    pub const APP_LAUNCH: &str = "app_launch";
+    pub const APP_CLOSE: &str = "app_close";
+    pub const DESKTOP_SWITCH: &str = "desktop_switch";
+}
+
+/// Per-sound volume levels (Part 36.2).
+/// Values relative to system master volume.
+pub mod sound_volumes {
+    pub const BOOT_CHIME: f32 = 1.00;      // full system volume
+    pub const LOCK_SCREEN: f32 = 0.80;
+    pub const UNLOCK_SCREEN: f32 = 0.80;
+    pub const NOTIFICATION: f32 = 0.70;
+    pub const APP_LAUNCH: f32 = 0.30;      // subtle -- background action
+    pub const APP_CLOSE: f32 = 0.20;       // very subtle
+    pub const DESKTOP_SWITCH: f32 = 0.50;  // whoosh -- noticeable
+    pub const COCKPIT_OPEN: f32 = 0.25;    // subtle spatial cue
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,7 +139,21 @@ impl SoundEngine {
     }
 
     /// Plays a named system sound non-blockingly over PipeWire / audio pipeline.
+    /// Reduced Motion (Part 36.3): animation sounds are muted, informational sounds preserved.
     pub fn play(&self, sound_name: &str, relative_volume: f32) {
+        // Reduced motion muting (Part 36.3)
+        if animus_physics::is_reduced_motion() {
+            let motion_sounds = [
+                sounds::APP_LAUNCH,
+                sounds::APP_CLOSE,
+                sounds::DESKTOP_SWITCH,
+                sounds::COCKPIT_OPEN,
+            ];
+            if motion_sounds.contains(&sound_name) {
+                return; // Silently skip animation sound
+            }
+        }
+
         let effective_vol = (relative_volume * *self.master_volume.read()).clamp(0.0, 1.0);
         let maybe_path = self.resolve_sound_path(sound_name);
 

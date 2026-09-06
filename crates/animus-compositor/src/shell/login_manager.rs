@@ -52,13 +52,42 @@ impl AELoginManager {
         }
     }
 
-    /// Authenticates and launches desktop session with smooth crossfade.
-    pub fn start_session(&self) {
-        let mut active = self.is_session_active.write();
-        *active = true;
-        self.crossfade_opacity.write().set_target(0.0);
-        self.bus.publish(AEEvent::WelcomeScreenCompleted);
-        info!("AELoginManager: Desktop session started. Greeter crossfading into desktop.");
+    /// Authenticates via PAM and launches desktop session with smooth crossfade.
+    pub fn authenticate_and_start(&self, password: &str) -> bool {
+        let users = self.users.read();
+        let idx = *self.selected_user_idx.read();
+        let username = users.get(idx).map(|u| u.username.clone()).unwrap_or_else(|| "vitus".to_string());
+        
+        let mut is_authenticated = false;
+
+        #[cfg(all(target_os = "linux", feature = "pam-auth"))]
+        {
+            if let Ok(mut auth) = pam::Authenticator::with_password(&username) {
+                auth.get_handler().set_credentials(password.to_string());
+                if auth.authenticate().is_ok() && auth.open_session().is_ok() {
+                    is_authenticated = true;
+                }
+            }
+        }
+        
+        #[cfg(not(all(target_os = "linux", feature = "pam-auth")))]
+        {
+            if !password.is_empty() {
+                is_authenticated = true;
+            }
+        }
+        
+        if is_authenticated {
+            let mut active = self.is_session_active.write();
+            *active = true;
+            self.crossfade_opacity.write().set_target(0.0);
+            self.bus.publish(AEEvent::WelcomeScreenCompleted);
+            info!("AELoginManager: Authenticated '{}' via PAM. Desktop session started.", username);
+            true
+        } else {
+            info!("AELoginManager: PAM Authentication failed for '{}'.", username);
+            false
+        }
     }
 
     pub fn update(&self, dt: f32) {
@@ -78,7 +107,7 @@ mod tests {
         assert!(!*login.is_session_active.read());
         assert_eq!(login.users.read().len(), 1);
 
-        login.start_session();
+        login.authenticate_and_start("test_password");
         assert!(*login.is_session_active.read());
         assert_eq!(login.crossfade_opacity.read().target, 0.0);
     }

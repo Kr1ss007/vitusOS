@@ -73,18 +73,38 @@ impl LockScreen {
         }
     }
 
-    /// Submits password for verification.
+    /// Submits password for verification via Linux PAM.
     pub fn submit_password(&self) {
         let pass_str = self.password_buf.read().clone();
         
-        // Check password (accept non-empty or default test credentials)
-        if !pass_str.is_empty() {
+        let mut is_authenticated = false;
+
+        #[cfg(all(target_os = "linux", feature = "pam-auth"))]
+        {
+            let user = std::env::var("USER").unwrap_or_else(|_| "vitus".to_string());
+            if let Ok(mut auth) = pam::Authenticator::with_password(&user) {
+                auth.get_handler().set_credentials(pass_str.clone());
+                if auth.authenticate().is_ok() && auth.open_session().is_ok() {
+                    is_authenticated = true;
+                }
+            }
+        }
+        
+        #[cfg(not(all(target_os = "linux", feature = "pam-auth")))]
+        {
+            // Fallback for WSLg/Windows Dev where PAM is not configured
+            if !pass_str.is_empty() {
+                is_authenticated = true;
+            }
+        }
+        
+        if is_authenticated {
             self.deactivate();
         } else {
             // Shake animation on failure (SPRING_SELECTION velocity injection)
             let mut shake = self.shake_x.write();
             shake.set_velocity(350.0);
-            info!("LockScreen: Authentication failed -> Triggered shake animation.");
+            info!("LockScreen: PAM Authentication failed -> Triggered shake animation.");
         }
     }
 

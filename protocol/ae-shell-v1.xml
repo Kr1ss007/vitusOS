@@ -24,6 +24,21 @@
       <arg name="menu_json" type="string"/>
     </request>
 
+    <!-- Update single menu item state without full menu rebuild (Addendum F) -->
+    <request name="update_menu_item">
+      <arg name="item_path" type="string"/>  <!-- e.g. "File/Save" -->
+      <arg name="enabled"   type="uint"/>    <!-- 0=disabled, 1=enabled -->
+      <arg name="checked"   type="uint"/>    <!-- 0=unchecked, 1=checked, 2=N/A -->
+    </request>
+
+    <!-- Shadow rendering hint to compositor (Addendum F) -->
+    <request name="set_shadow_style">
+      <arg name="style" type="uint"/>
+      <!-- 0=default (compositor chooses by altitude)
+           1=none (suppress shadow for transparent windows)
+           2=large (force floating-altitude shadow)  -->
+    </request>
+
     <!-- Sets Dock badge count. -1 = remove badge. -->
     <request name="set_badge_count">
       <arg name="count" type="int"/>
@@ -46,9 +61,9 @@
     <!-- Compositor tells app: user clicked window close button -->
     <event name="close_requested"/>
 
-    <!-- User activated a menu item -->
+    <!-- User activated a menu item (Addendum F: item_path, not menu_item_id) -->
     <event name="menu_activated">
-      <arg name="menu_item_id" type="string"/>
+      <arg name="item_path" type="string"/>  <!-- e.g. "File/Save" -->
     </event>
 
     <!-- Compositor reconfigures surface (size/state) -->

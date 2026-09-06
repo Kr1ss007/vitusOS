@@ -197,7 +197,7 @@ mod tests {
         assert!(state.surfaces[0].is_renderable());
 
         // Open second window
-        let term_id = state.create_toplevel("terminow", 1920.0, 1080.0);
+        let _term_id = state.create_toplevel("terminow", 1920.0, 1080.0);
         assert_eq!(state.surfaces.len(), 2);
         assert!(state.focused().is_some());
         assert_eq!(state.focused().unwrap().app_id, "terminow");

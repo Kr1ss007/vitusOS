@@ -5,10 +5,10 @@
 //! - `ScanoutFramebuffer` — CPU software rasterizer (WSL2/fallback)
 //!
 //! The architecture:
-//! ```
-//! Smithay compositor → GPU mod → AnimusVulkanRenderer → vkQueueSubmit → DRM page flip
-//!                                      ↑
-//!                              shaderc (GLSL→SPIR-V)
+//! ```text
+//! Smithay compositor -> GPU mod -> AnimusVulkanRenderer -> vkQueueSubmit -> DRM page flip
+//!                                      ^
+//!                              shaderc (GLSL -> SPIR-V)
 //!                              ash (raw Vulkan calls)
 //!                              ScanoutFramebuffer (CPU compositing)
 //! ```

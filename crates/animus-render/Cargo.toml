@@ -14,5 +14,13 @@ serde_json.workspace = true
 parking_lot.workspace = true
 ttf-parser.workspace = true
 fontdue.workspace = true
+rustybuzz.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+anyhow.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ash.workspace = true
+shaderc.workspace = true
+glow.workspace = true
+smithay.workspace = true

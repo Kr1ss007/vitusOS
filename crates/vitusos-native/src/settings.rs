@@ -141,8 +141,13 @@ impl Default for SystemSettingsState {
 }
 
 pub struct SettingsApp {
-    pub altitude: SurfaceAltitude, // Mid (20px Kawase Blur, 82% Opacity)
+    pub surface: crate::AENativeSurface,
     pub current_section: RwLock<SettingsSection>,
+    
+    // AEAppKit UI Components
+    pub sidebar: RwLock<animus_appkit::layout::surface::AESidebar>,
+    pub content: RwLock<animus_appkit::layout::surface::AEContent>,
+    
     pub selection_pill_y: RwLock<SpringSolver>, // SPRING_SELECTION (400, 28)
     pub state: RwLock<SystemSettingsState>,
     pub dbus: Arc<SystemDbusManager>,
@@ -151,9 +156,14 @@ pub struct SettingsApp {
 
 impl SettingsApp {
     pub fn new(bus: EventBus) -> Self {
+        let mut surface = crate::AENativeSurface::new("settings", "Settings");
+        let _ = surface.connect();
+        
         Self {
-            altitude: SurfaceAltitude::Mid,
+            surface,
             current_section: RwLock::new(SettingsSection::Appearance),
+            sidebar: RwLock::new(animus_appkit::layout::surface::AESidebar::new(280.0)),
+            content: RwLock::new(animus_appkit::layout::surface::AEContent { x: 280.0, y: 0.0, width: 720.0, height: 768.0 }),
             selection_pill_y: RwLock::new(SpringSolver::new(36.0, SpringProfile::Selection)),
             state: RwLock::new(SystemSettingsState::default()),
             dbus: Arc::new(SystemDbusManager::new()),

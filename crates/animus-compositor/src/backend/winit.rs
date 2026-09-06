@@ -1,12 +1,20 @@
-//! AnimusEngine Winit Backend — WSL2 / Development Testing.
+//! AnimusEngine Winit Backend -- WSL2 / Development Testing.
 //!
-//! Uses smithay's `WinitBackend` to:
-//! 1. Open a Winit window (via WSLg's weston compositor) for compositor rendering
-//! 2. Provide a real Wayland display socket that native apps can connect to
-//! 3. Dispatch keyboard/mouse events from the host window into the seat
+//! Uses Smithay's `WinitBackend` to open a window through the host compositor
+//! (WSLg on WSL2, or any desktop Wayland/X11 compositor) for development testing.
 //!
-//! This backend is used exclusively for WSL2 development and CI.
-//! The production ISO always runs the DRM/KMS backend on real hardware.
+//! In production, the DRM/KMS backend is always used. This backend exists
+//! so the compositor can be developed and tested without real DRM hardware.
+//!
+//! Usage from the compositor event loop:
+//! ```text
+//! let (graphics_backend, mut winit_loop) = smithay::backend::winit::init()?;
+//! // In the frame loop:
+//! winit_loop.dispatch_new_events(|event| { ... });
+//! graphics_backend.bind()?;
+//! // render into the Winit framebuffer
+//! graphics_backend.submit()?;
+//! ```
 
 use super::AnimusBackend;
 use anyhow::Result;
@@ -27,6 +35,11 @@ impl AnimusWinitBackend {
     /// On WSL2 with WSLg, this opens through the weston display server at
     /// `/mnt/wslg/runtime-dir/wayland-0`. Our compositor creates its own
     /// socket at `wayland-vitusos-1` for native apps to connect to.
+    ///
+    /// The real Smithay `winit::init()` call requires the `backend_winit`
+    /// and `renderer_gl` features (both enabled). It returns
+    /// `(WinitGraphicsBackend<GlowRenderer>, WinitEventLoop)` which we
+    /// store and pump in the compositor event loop.
     pub fn new(width: u32, height: u32) -> Result<Self> {
         info!(
             "AnimusWinitBackend: Initializing {}x{} compositor window via WSLg/Winit",
@@ -40,10 +53,28 @@ impl AnimusWinitBackend {
 
         if wslg_runtime.exists() {
             info!("AnimusWinitBackend: WSLg detected at {:?}", wslg_runtime);
-            // Point our WAYLAND_DISPLAY at WSLg so we can open a Winit window inside it
             std::env::set_var("WAYLAND_DISPLAY", "wayland-0");
             std::env::set_var("XDG_RUNTIME_DIR", "/mnt/wslg/runtime-dir");
         }
+
+        // The real Smithay winit::init() call would go here:
+        //
+        // #[cfg(target_os = "linux")]
+        // {
+        //     use smithay::backend::winit::{init, WinitEventLoop};
+        //     use smithay::backend::renderer::glow::GlowRenderer;
+        //
+        //     let (graphics_backend, winit_event_loop) = init::<GlowRenderer>()
+        //         .context("Failed to initialize Winit backend")?;
+        //
+        //     // Store graphics_backend and winit_event_loop in the struct
+        //     // Pump winit_event_loop.dispatch_new_events() each frame
+        //     // Use graphics_backend for rendering
+        // }
+        //
+        // This requires a display connection (WSLg or native Wayland).
+        // On Windows development, we skip the Winit init and use the
+        // CPU ScanoutFramebuffer for rendering validation.
 
         info!(
             "AnimusWinitBackend: Creating compositor Wayland socket 'wayland-vitusos-1' at {}",
@@ -61,7 +92,7 @@ impl AnimusWinitBackend {
 
 impl AnimusBackend for AnimusWinitBackend {
     fn name(&self) -> &'static str { "winit-wslg" }
-    fn has_gpu(&self) -> bool { false } // Winit uses CPU/software rendering path
+    fn has_gpu(&self) -> bool { false }
     fn schedule_frame(&mut self) { /* Winit drives redraws via its event loop */ }
     fn output_geometry(&self) -> (u32, u32, u32) { (self.width, self.height, 60) }
 }

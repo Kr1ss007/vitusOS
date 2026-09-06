@@ -34,11 +34,11 @@ pub struct ZenWorkspace {
 
 /// Direct Zen Browser Process Manager and Glass Theme Injector.
 pub struct ZenBrowserManager {
+    pub surface: crate::AENativeSurface,
     pub is_running: bool,
     pub workspaces: RwLock<Vec<ZenWorkspace>>,
     pub active_workspace_idx: RwLock<usize>,
-    pub sidebar_altitude: SurfaceAltitude, // Mid (20px Kawase Blur, 82% Opacity)
-    pub sidebar_width: SpringSolver,       // SPRING_SELECTION (400, 28): 48.0 -> 240.0 (compact vs expanded)
+    pub sidebar: RwLock<animus_appkit::layout::surface::AESidebar>,
     pub is_compact_mode: RwLock<bool>,
     #[allow(dead_code)]
     bus: EventBus,
@@ -65,12 +65,15 @@ impl ZenBrowserManager {
             active_tab_id: Some(1),
         };
 
+        let mut surface = crate::AENativeSurface::new("zen-browser", "Zen Browser");
+        let _ = surface.connect();
+        
         Self {
+            surface,
             is_running: false,
             workspaces: RwLock::new(vec![default_workspace]),
             active_workspace_idx: RwLock::new(0),
-            sidebar_altitude: SurfaceAltitude::Mid,
-            sidebar_width: SpringSolver::new(240.0, SpringProfile::Selection),
+            sidebar: RwLock::new(animus_appkit::layout::surface::AESidebar::new(240.0)),
             is_compact_mode: RwLock::new(false),
             bus,
         }
@@ -192,11 +195,11 @@ impl ZenBrowserManager {
     pub fn toggle_compact_mode(&mut self) {
         let mut compact = self.is_compact_mode.write();
         *compact = !*compact;
-        self.sidebar_width.set_target(if *compact { 48.0 } else { 240.0 });
+        self.sidebar.write().slide_spring.set_target(if *compact { 48.0 } else { 240.0 });
     }
 
     pub fn update(&mut self, dt: f32) {
-        self.sidebar_width.update(dt);
+        self.sidebar.write().update(dt);
     }
 }
 
@@ -225,7 +228,7 @@ mod tests {
 
         // Toggle compact mode
         manager.toggle_compact_mode();
-        assert_eq!(manager.sidebar_width.target, 48.0);
+        assert_eq!(manager.sidebar.read().slide_spring.target, 48.0);
         manager.update(0.016);
     }
 }

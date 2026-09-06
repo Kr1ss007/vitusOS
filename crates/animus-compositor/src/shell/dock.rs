@@ -34,6 +34,13 @@ pub struct Dock {
     pub icon_size: f32,
     pub max_magnify: f32,
     pub corner_radius: f32,
+    // Fullscreen auto-hide (Part 40.3) -- mirrored: hot zone at bottom
+    pub is_fullscreen: bool,
+    pub hide_y: SpringSolver,  // 0 = visible, +HEIGHT = hidden below screen
+    pub cursor_y: f32,
+    // Auto-hide when window overlaps (Addendum I.2)
+    pub auto_hiding: bool,
+    pub auto_hide: SpringSolver,  // SPRING_HOVER for show/hide
 }
 
 impl Default for Dock {
@@ -47,6 +54,7 @@ impl Dock {
     pub const ICON_SIZE: f32 = 48.0;
     pub const MAX_MAGNIFY: f32 = 72.0; // 1.5x Peak
     pub const CORNER_RADIUS: f32 = 16.0;
+    pub const HOT_ZONE_PX: f32 = 4.0; // Bottom 4px hot zone in fullscreen
 
     pub fn new() -> Self {
         Self {
@@ -55,7 +63,44 @@ impl Dock {
             icon_size: Self::ICON_SIZE,
             max_magnify: Self::MAX_MAGNIFY,
             corner_radius: Self::CORNER_RADIUS,
+            is_fullscreen: false,
+            hide_y: SpringSolver::new(0.0, SpringProfile::Selection),
+            cursor_y: 0.0,
+            auto_hiding: false,
+            auto_hide: SpringSolver::new(0.0, SpringProfile::Hover),
         }
+    }
+
+    /// Enters fullscreen mode (Part 40.3).
+    pub fn enter_fullscreen_mode(&mut self) {
+        self.is_fullscreen = true;
+    }
+
+    /// Exits fullscreen mode (Part 40.3).
+    pub fn exit_fullscreen_mode(&mut self) {
+        self.is_fullscreen = false;
+        self.hide_y.set_target(0.0);
+    }
+
+    /// Updates cursor Y for hot zone detection (Part 40.3).
+    pub fn on_pointer_motion(&mut self, _x: f32, y: f32, screen_h: f32) {
+        self.cursor_y = y;
+        if self.is_fullscreen {
+            // Hot zone: cursor within 4px of bottom edge
+            let target = if y >= screen_h - Self::HOT_ZONE_PX { 0.0 } else { Self::HEIGHT };
+            self.hide_y.set_target(target);
+        }
+    }
+
+    /// Returns render Y offset: 0 = visible, +HEIGHT = hidden.
+    pub fn render_offset_y(&self) -> f32 {
+        if self.is_fullscreen { self.hide_y.value } else { self.auto_hide.value }
+    }
+
+    pub fn is_hidden(&self) -> bool {
+        if self.is_fullscreen { self.hide_y.value > Self::HEIGHT * 0.5 }
+        else if self.auto_hiding { self.auto_hide.value > Self::HEIGHT * 0.5 }
+        else { false }
     }
 
     pub fn add_item(&mut self, item: DockItem) {
@@ -104,6 +149,8 @@ impl Dock {
             item.magnify.update(dt);
             item.bounce.update(dt);
         }
+        self.hide_y.update(dt);
+        self.auto_hide.update(dt);
     }
 }
 

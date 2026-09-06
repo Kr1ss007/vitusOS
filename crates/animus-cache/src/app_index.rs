@@ -381,4 +381,14 @@ impl AppIndexCache {
             screenshot_urls: Vec::new(),
         })
     }
+
+    /// Invalidates the entire app index (Part 26).
+    pub fn invalidate(&self) {
+        self.entries.write().clear();
+    }
+
+    /// Returns the number of entries in the index.
+    pub fn count(&self) -> usize {
+        self.entries.read().len()
+    }
 }

@@ -68,6 +68,20 @@ async fn main() -> anyhow::Result<()> {
             println!("Options:");
             println!("  --surface <panel|dock|control-center|all>  Launch native shell surface");
             println!("  --app <filer|pathfinder|terminow|settings|zen-browser|package-manager>  Launch application");
+            return Ok(());
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        tracing::info!("Connecting AENative app to Wayland compositor...");
+        if let Ok(_display) = wayland_client::Connection::connect_to_env() {
+            tracing::info!("Successfully connected to Wayland display!");
+            // The full Wayland client event loop will be implemented with
+            // smithay-client-toolkit for registry binding and surface creation.
+            // For now, the app runs its internal logic without a Wayland surface.
+        } else {
+            tracing::error!("Failed to connect to Wayland display. Is the compositor running?");
         }
     }
 

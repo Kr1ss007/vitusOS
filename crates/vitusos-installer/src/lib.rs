@@ -13,7 +13,7 @@ pub mod wizard;
 
 pub use account::{AccountProfile, PasswordEvaluator};
 pub use disk::DiskScanner;
-pub use engine::InstallEngine;
+pub use engine::{InstallEngine, PartitionLayout};
 pub use types::{AppearanceMode, DiskTransport, InstallTelemetry, PartitionStrategy, PasswordStrength, TargetDisk, WizardStep};
 pub use ui::{WizardCardLayout, WizardNavigation};
 pub use vault::VaultSetup;
@@ -78,6 +78,28 @@ mod tests {
         let disk = &disks[0];
         assert!(!disk.model.is_empty());
         assert!(!disk.formatted_size().is_empty());
+    }
+
+    #[test]
+    fn test_partition_layout_nvme() {
+        let layout = PartitionLayout::for_disk("/dev/nvme0n1");
+        assert_eq!(layout.efi_partition, "/dev/nvme0n1p1");
+        assert_eq!(layout.root_partition, "/dev/nvme0n1p2");
+        assert_eq!(layout.efi_size_mb, 512);
+    }
+
+    #[test]
+    fn test_partition_layout_sata() {
+        let layout = PartitionLayout::for_disk("/dev/sda");
+        assert_eq!(layout.efi_partition, "/dev/sda1");
+        assert_eq!(layout.root_partition, "/dev/sda2");
+        assert_eq!(layout.efi_size_mb, 512);
+    }
+
+    #[test]
+    fn test_install_engine_not_running_initially() {
+        let engine = InstallEngine::new();
+        assert!(!engine.is_running());
     }
 }
 

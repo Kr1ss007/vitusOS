@@ -6,18 +6,22 @@ use serde::{Deserialize, Serialize};
 /// Semantic color roles — prevents arbitrary hex colors in application code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TextColor {
-    /// #1A1A1A on light content / #F0F0F0 on dark glass
+    /// #1A1A1A -- body text on light content area (AEContent #FEFEFE)
     Primary,
-    /// #808080 (Cosmic Gray)
+    /// #808080 -- supporting text on light content area
     Secondary,
-    /// #3D3D3D (Subdued labels)
+    /// #3D3D3D -- subdued labels on light content area
     Muted,
     /// #E85D00 / #FF6B2B (Space Orange)
     Accent,
     /// #FFFFFF (On orange buttons)
     OnAccent,
-    /// #F0F0F0 (On dark glass surfaces)
+    /// #F2F2F2 -- primary text on dark glass (Panel, Dock, menus) (95% white)
     OnDark,
+    /// #ABABAB -- secondary text on dark glass (67% white) (FIX4-06)
+    OnDarkSecondary,
+    /// #6B6B6B -- tertiary/sidebar headers on dark glass (42% white) (FIX4-06)
+    OnDarkTertiary,
 }
 
 impl TextColor {
@@ -29,7 +33,9 @@ impl TextColor {
             Self::Muted => 0xFF3D3D3D,
             Self::Accent => 0xFFE85D00,
             Self::OnAccent => 0xFFFFFFFF,
-            Self::OnDark => 0xFFF0F0F0,
+            Self::OnDark => 0xFFF2F2F2,        // 95% white (updated per Part 29.13)
+            Self::OnDarkSecondary => 0xFFABABAB, // 67% white (FIX4-06)
+            Self::OnDarkTertiary => 0xFF6B6B6B,  // 42% white (FIX4-06)
         }
     }
 
@@ -41,7 +47,9 @@ impl TextColor {
             Self::Muted => Vec4::new(0.239, 0.239, 0.239, 1.0),
             Self::Accent => Vec4::new(0.910, 0.365, 0.0, 1.0),
             Self::OnAccent => Vec4::new(1.0, 1.0, 1.0, 1.0),
-            Self::OnDark => Vec4::new(0.941, 0.941, 0.941, 1.0),
+            Self::OnDark => Vec4::new(0.949, 0.949, 0.949, 1.0),         // #F2F2F2
+            Self::OnDarkSecondary => Vec4::new(0.671, 0.671, 0.671, 1.0), // #ABABAB
+            Self::OnDarkTertiary => Vec4::new(0.420, 0.420, 0.420, 1.0),  // #6B6B6B
         }
     }
 }

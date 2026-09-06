@@ -13,6 +13,7 @@ path = "src/main.rs"
 animus-physics.workspace = true
 animus-core.workspace = true
 animus-render.workspace = true
+animus-appkit = { path = "../animus-appkit" }
 animus-cache.workspace = true
 animus-hev.workspace = true
 tokio.workspace = true
@@ -25,8 +26,11 @@ tracing-subscriber.workspace = true
 anyhow.workspace = true
 dirs.workspace = true
 
-[target.'cfg(unix)'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 nix.workspace = true
+wayland-client.workspace = true
+wayland-protocols.workspace = true
+smithay-client-toolkit.workspace = true
 
 
 

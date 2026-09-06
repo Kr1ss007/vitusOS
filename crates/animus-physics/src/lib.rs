@@ -4,4 +4,4 @@ pub mod spring;
 
 pub use animation_engine::AnimationEngine;
 pub use clock::AnimationClock;
-pub use spring::{SpringProfile, SpringSolver, SpringSolver2D};
+pub use spring::{SpringProfile, SpringSolver, SpringSolver2D, is_reduced_motion, set_reduced_motion};

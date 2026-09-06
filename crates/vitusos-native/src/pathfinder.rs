@@ -10,8 +10,9 @@ use crate::app_preview::AppPreviewSheet;
 use crate::package_manager::PackageManager;
 
 pub struct Pathfinder {
+    pub surface: crate::AELayerSurface,
     pub is_open: bool,
-    pub query: String,
+    pub query_field: animus_appkit::widgets::text_field::AETextField,
     pub scale: SpringSolver,          // SPRING_SELECTION (400, 28): 0.92 -> 1.0
     pub opacity: SpringSolver,        // SPRING_SELECTION (400, 28): 0.0 -> 1.0
     pub spinner_active: bool,
@@ -25,12 +26,31 @@ pub struct Pathfinder {
 
 impl Pathfinder {
     pub fn new(cache: AppIndexCache, bus: EventBus) -> Self {
+        let mut surface = crate::AELayerSurface::new("pathfinder", "Pathfinder Overlay", crate::surface::AELayer::Overlay);
+        let _ = surface.connect();
+        
         let preview_sheet = AppPreviewSheet::new(bus.clone());
         let package_manager = PackageManager::new(bus.clone());
+        
+        let pathfinder_menu_json = r#"[
+            {"label": "Search", "submenu": [
+                {"label": "Find", "action": "find"},
+                {"label": "Clear", "action": "clear"}
+            ]},
+            {"label": "View", "submenu": [
+                {"label": "Toggle Preview", "action": "toggle_preview"}
+            ]}
+        ]"#.to_string();
+
+        bus.publish_async(animus_core::events::AEEvent::AEMenuRegistered {
+            app_id: "pathfinder".to_string(),
+            menu_json: pathfinder_menu_json,
+        });
 
         Self {
+            surface,
             is_open: false,
-            query: String::new(),
+            query_field: animus_appkit::widgets::text_field::AETextField::new("what are you looking for?", 600.0),
             scale: SpringSolver::new(0.92, SpringProfile::Selection),
             opacity: SpringSolver::new(0.0, SpringProfile::Selection),
             spinner_active: false,
@@ -102,8 +122,8 @@ impl Pathfinder {
 
     pub fn on_query_changed(&mut self, query: impl Into<String>) {
         let q = query.into();
-        self.query = q.clone();
-        self.results = self.cache.search(&self.query);
+        self.query_field.value = q.clone();
+        self.results = self.cache.search(&self.query_field.value);
         self.bus.publish(AEEvent::PathfinderQueryChanged { query: q });
         self.bus.publish(AEEvent::PathfinderResultsReady {
             count: self.results.len(),

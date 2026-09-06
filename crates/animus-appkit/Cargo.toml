@@ -1,0 +1,13 @@
+[package]
+name = "animus-appkit"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+animus-core.workspace = true
+animus-physics.workspace = true
+animus-render.workspace = true
+glam.workspace = true
+tracing.workspace = true

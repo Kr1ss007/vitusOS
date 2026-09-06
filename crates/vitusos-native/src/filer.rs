@@ -126,6 +126,7 @@ impl FileOperationDaemon {
 
 /// Persistent background daemon (macOS Finder equivalent) that never terminates.
 pub struct FilerDaemon {
+    pub desktop_surface: crate::AELayerSurface,
     pub is_running: bool,
     pub desktop_icons: Vec<DesktopIcon>,
     pub open_windows: Vec<FilerWindow>,
@@ -147,7 +148,28 @@ impl FilerDaemon {
             is_selected: false,
         });
 
+        let mut desktop_surface = crate::AELayerSurface::new("filer-desktop", "Filer Desktop", crate::surface::AELayer::Background);
+        let _ = desktop_surface.connect();
+
+        let filer_menu_json = r#"[
+            {"label": "File", "submenu": [
+                {"label": "New Window", "action": "new_window"},
+                {"label": "New Folder", "action": "new_folder"}
+            ]},
+            {"label": "Edit", "submenu": [
+                {"label": "Cut", "action": "cut"},
+                {"label": "Copy", "action": "copy"},
+                {"label": "Paste", "action": "paste"}
+            ]}
+        ]"#.to_string();
+
+        bus.publish_async(animus_core::events::AEEvent::AEMenuRegistered {
+            app_id: "filer".to_string(),
+            menu_json: filer_menu_json,
+        });
+
         Self {
+            desktop_surface,
             is_running: true,
             desktop_icons: default_desktop_icons,
             open_windows: Vec::new(),
@@ -171,17 +193,21 @@ impl FilerDaemon {
 }
 
 pub struct FilerWindow {
-    pub sidebar_altitude: SurfaceAltitude, // Mid (20px Kawase Blur, 82% Opacity)
-    pub toolbar_altitude: SurfaceAltitude, // Low (8px Kawase Blur, 94% Opacity)
-    pub content_altitude: SurfaceAltitude, // Grounded (100% Opaque Canvas)
-    pub current_directory: PathBuf,
+    pub surface: crate::AENativeSurface,
     pub view_mode: FilerViewMode,
     pub sidebar_items: Vec<SidebarItem>,
     pub files: Vec<FileEntry>,
+    pub current_directory: PathBuf,
+    
+    // AEAppKit UI Components
+    pub sidebar: animus_appkit::layout::surface::AESidebar,
+    pub toolbar: animus_appkit::layout::surface::AEToolbar,
+    pub content: animus_appkit::layout::surface::AEContent,
+    pub search_bar: animus_appkit::widgets::text_field::AETextField,
+    
     pub selected_sidebar_idx: usize,
     pub selected_file_indices: Vec<usize>,
     pub selection_pill_y: SpringSolver,    // SPRING_SELECTION (400, 28)
-    pub search_bar_width: SpringSolver,    // SPRING_HOVER (600, 40): 188 -> 260px
     pub drag_ghost_pos: SpringSolver2D,    // SPRING_WINDOW_DRAG (800, 35)
     pub is_dragging_file: bool,
     pub is_zebra_striped: bool,
@@ -190,6 +216,9 @@ pub struct FilerWindow {
 
 impl FilerWindow {
     pub fn new(bus: EventBus) -> Self {
+        let mut surface = crate::AENativeSurface::new("filer", "Filer");
+        let _ = surface.connect();
+        
         let mut sidebar_items = Vec::new();
         
         sidebar_items.push(SidebarItem {
@@ -257,26 +286,28 @@ impl FilerWindow {
             badge: Some("HEV".to_string()),
         });
 
-        let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-
         let mut win = Self {
-            sidebar_altitude: SurfaceAltitude::Mid,
-            toolbar_altitude: SurfaceAltitude::Low,
-            content_altitude: SurfaceAltitude::Grounded,
-            current_directory: home_dir.clone(),
-            view_mode: FilerViewMode::Columns,
+            surface,
+            view_mode: FilerViewMode::Icon,
             sidebar_items,
             files: Vec::new(),
-            selected_sidebar_idx: 2, // Desktop by default
+            current_directory: dirs::desktop_dir().unwrap_or_else(|| PathBuf::from("/")),
+            
+            sidebar: animus_appkit::layout::surface::AESidebar::new(220.0),
+            toolbar: animus_appkit::layout::surface::AEToolbar::new(),
+            content: animus_appkit::layout::surface::AEContent { x: 220.0, y: 48.0, width: 580.0, height: 552.0 },
+            search_bar: animus_appkit::widgets::text_field::AETextField::new("Search", 188.0),
+            
+            selected_sidebar_idx: 2, // Desktop
             selected_file_indices: Vec::new(),
-            selection_pill_y: SpringSolver::new(72.0, SpringProfile::Selection),
-            search_bar_width: SpringSolver::new(188.0, SpringProfile::Hover),
+            selection_pill_y: SpringSolver::new(0.0, SpringProfile::Selection),
             drag_ghost_pos: SpringSolver2D::new(0.0, 0.0, SpringProfile::WindowDrag),
             is_dragging_file: false,
             is_zebra_striped: true,
             bus,
         };
 
+        let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
         win.navigate_to(home_dir);
         win
     }
@@ -362,7 +393,7 @@ impl FilerWindow {
 
     /// Filer's searchbar IS Pathfinder: focusing/clicking search directly opens Pathfinder!
     pub fn activate_search(&mut self) {
-        self.search_bar_width.set_target(260.0);
+        self.search_bar.focus_spring.set_target(1.0);
         self.bus.publish(AEEvent::PathfinderOpened);
     }
 
@@ -370,13 +401,14 @@ impl FilerWindow {
         if focused {
             self.activate_search();
         } else {
-            self.search_bar_width.set_target(188.0);
+            self.search_bar.focus_spring.set_target(0.0);
         }
     }
 
     pub fn update(&mut self, dt: f32) {
         self.selection_pill_y.update(dt);
-        self.search_bar_width.update(dt);
+        self.search_bar.update(dt);
+        self.sidebar.update(dt);
         self.drag_ghost_pos.update(dt);
     }
 }
@@ -404,12 +436,10 @@ mod tests {
         assert!(daemon.is_running);
         assert!(!daemon.desktop_icons.is_empty());
 
-        let window = daemon.spawn_window(std::env::current_dir().unwrap());
-        assert_eq!(window.sidebar_altitude, SurfaceAltitude::Mid);
-        assert_eq!(window.content_altitude, SurfaceAltitude::Grounded);
+        let mut window = daemon.spawn_window(std::env::current_dir().unwrap());
 
         // Filer searchbar activation sends AEEvent::PathfinderOpened
         window.activate_search();
-        assert_eq!(window.search_bar_width.target, 260.0);
+        assert_eq!(window.search_bar.focus_spring.target, 1.0);
     }
 }

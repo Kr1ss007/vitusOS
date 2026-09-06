@@ -12,10 +12,12 @@
 
 pub mod drm;
 pub mod winit;
+pub mod udev_seat;
 
 #[cfg(target_os = "linux")]
 pub use self::drm::AnimusDrmBackend;
 pub use self::winit::AnimusWinitBackend;
+pub use self::udev_seat::UdevLibinputSeat;
 
 use anyhow::Result;
 

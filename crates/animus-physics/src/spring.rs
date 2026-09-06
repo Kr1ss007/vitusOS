@@ -1,8 +1,10 @@
 //! Spring Physics Solver using Semi-Implicit Euler integration.
 //!
 //! Implements canonical motion profiles and 2D edge-resistance solvers (FIX3-03, FIX3-04).
+//! Reduced Motion support (Part 38): global atomic flag + per-spring eliminate flag.
 
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Named motion profiles with exact stiffness and damping ratios.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,6 +61,21 @@ impl SpringProfile {
     }
 }
 
+/// Global reduced motion flag (Part 38).
+/// When true, springs marked `eliminate_on_reduced_motion` snap to target instantly.
+/// Direct manipulation springs (drag, scroll, traffic light hover) are preserved.
+static REDUCED_MOTION: AtomicBool = AtomicBool::new(false);
+
+/// Sets the global reduced motion flag. Called by Settings -> Appearance -> Reduce Motion.
+pub fn set_reduced_motion(enabled: bool) {
+    REDUCED_MOTION.store(enabled, Ordering::Relaxed);
+}
+
+/// Returns true if reduced motion is currently enabled.
+pub fn is_reduced_motion() -> bool {
+    REDUCED_MOTION.load(Ordering::Relaxed)
+}
+
 /// 1D Spring Solver driven by semi-implicit Euler integration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpringSolver {
@@ -68,6 +85,12 @@ pub struct SpringSolver {
     pub stiffness: f32,
     pub damping: f32,
     pub epsilon: f32,
+    /// When true AND global reduced motion is enabled, this spring snaps to target
+    /// instantly instead of animating. Default: false (spring is preserved).
+    /// Set to true for visual-only springs: window birth/close, CockpitView zoom,
+    /// desktop switch, notification slide, BootCrossfade, WelcomeScreen, etc.
+    #[serde(skip)]
+    pub eliminate_on_reduced_motion: bool,
 }
 
 impl SpringSolver {
@@ -80,6 +103,7 @@ impl SpringSolver {
             stiffness,
             damping,
             epsilon: 0.001,
+            eliminate_on_reduced_motion: false,
         }
     }
 
@@ -91,7 +115,15 @@ impl SpringSolver {
             stiffness,
             damping,
             epsilon: 0.001,
+            eliminate_on_reduced_motion: false,
         }
+    }
+
+    /// Marks this spring as eliminated during reduced motion (Part 38).
+    /// Visual-only springs should call this. Direct manipulation springs should not.
+    pub fn eliminate_on_reduced_motion(mut self, eliminate: bool) -> Self {
+        self.eliminate_on_reduced_motion = eliminate;
+        self
     }
 
     #[inline]
@@ -117,7 +149,16 @@ impl SpringSolver {
     }
 
     /// Advances the spring by dt (in seconds) using semi-implicit Euler integration.
+    /// If reduced motion is enabled AND this spring is marked for elimination,
+    /// snaps to target instantly (Part 38).
     pub fn update(&mut self, dt: f32) -> f32 {
+        // Reduced motion check (Part 38)
+        if self.eliminate_on_reduced_motion && is_reduced_motion() {
+            self.value = self.target;
+            self.velocity = 0.0;
+            return self.value;
+        }
+
         if self.is_settled() {
             self.value = self.target;
             self.velocity = 0.0;
@@ -255,5 +296,36 @@ mod tests {
         spring2d.update(1.0 / 60.0);
         assert!(spring2d.x.value > 0.0);
         assert!(spring2d.y.value > 0.0);
+    }
+
+    #[test]
+    fn test_reduced_motion_elimination() {
+        // Spring marked for elimination snaps instantly under reduced motion
+        let mut spring = SpringSolver::new(0.0, SpringProfile::Selection)
+            .eliminate_on_reduced_motion(true);
+        spring.set_target(100.0);
+
+        set_reduced_motion(true);
+        let val = spring.update(1.0 / 60.0);
+        assert_eq!(val, 100.0); // Snapped instantly
+        assert!(spring.is_settled());
+
+        // Reset for next test
+        set_reduced_motion(false);
+    }
+
+    #[test]
+    fn test_reduced_motion_preserved() {
+        // Spring NOT marked for elimination animates normally even under reduced motion
+        let mut spring = SpringSolver::new(0.0, SpringProfile::Selection);
+        // Note: eliminate_on_reduced_motion defaults to false
+        spring.set_target(100.0);
+
+        set_reduced_motion(true);
+        let val = spring.update(1.0 / 60.0);
+        assert!(val < 100.0); // Still animating -- preserved
+        assert!(!spring.is_settled());
+
+        set_reduced_motion(false);
     }
 }

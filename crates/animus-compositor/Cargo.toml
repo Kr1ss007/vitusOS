@@ -10,6 +10,10 @@ name = "vitusos-compositor"
 path = "src/main.rs"
 
 [[bin]]
+name = "vitusos-session"
+path = "src/session.rs"
+
+[[bin]]
 name = "vitusos-simulation"
 path = "src/simulation.rs"
 
@@ -21,8 +25,10 @@ animus-render.workspace = true
 animus-input.workspace = true
 animus-cache.workspace = true
 animus-hev.workspace = true
+animus-appkit.workspace = true
 tokio.workspace = true
 parking_lot.workspace = true
+calloop.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 glam.workspace = true
@@ -30,18 +36,25 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
+crossbeam-channel.workspace = true
 zeroize = { workspace = true, features = ["alloc"] }
 
-# Compositor Engine
+# Compositor Engine — Linux bare-metal dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
 smithay.workspace = true
 wayland-server.workspace = true
 wayland-protocols.workspace = true
+calloop-wayland-source.workspace = true
 drm.workspace = true
 drm-fourcc.workspace = true
 gbm.workspace = true
 input.workspace = true
+nix.workspace = true
 ash.workspace = true
 shaderc.workspace = true
-pam.workspace = true
+pam = { workspace = true, optional = true }
+
+[features]
+default = []
+pam-auth = ["pam"]
 

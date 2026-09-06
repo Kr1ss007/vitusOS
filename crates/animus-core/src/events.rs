@@ -115,7 +115,11 @@ pub enum AEEvent {
     DragDrop { x: f32, y: f32 },
     DragCancel,
 
-    // ── Global Menu & D-Bus / EO-Bus ──────────────────────────────
+    // ── Global Menu & AEBridge (Native) ───────────────────────────
+    AEMenuRegistered { app_id: String, menu_json: String },
+    AEMenuUpdated { app_id: String, item_path: String },
+    
+    // ── Global Menu & D-Bus / EO-Bus (External) ───────────────────
     DBusMenuRegistered { app_id: String, menu_json: String },
     DBusMenuUpdated { app_id: String, item_path: String },
     DBusMenuChanged,
@@ -179,4 +183,7 @@ pub enum AEEvent {
     FileOpProgress { op_id: u64, progress: f32 },
     FileOpComplete { op_id: u64 },
     FileOpConflict { op_id: u64, file_name: String },
+
+    // ── Clipboard ──────────────────────────────────────────────────
+    ClipboardChanged,
 }

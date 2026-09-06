@@ -1,8 +1,9 @@
 [Unit]
 Description=vitusOS AnimusEngine Wayland Compositor & Display Server
-Documentation=https://github.com/Kr1ss007/vitusOS
-After=systemd-user-sessions.service plymouth-quit-wait.service systemd-udevd.service
+Documentation=https://github.com/vitusOS/vitusos
+After=vitusos-session.service systemd-user-sessions.service plymouth-quit-wait.service systemd-udevd.service
 After=pipewire.service wireplumber.service
+Requires=vitusos-session.service
 Before=graphical.target
 Wants=pipewire.service wireplumber.service
 Conflicts=getty@tty1.service
