@@ -141,10 +141,44 @@ Ending point:   244 tests, 26,049 LOC (+524 LOC, +6 tests, zero failures)
       * Cleaned script line endings to standard Unix LF.
 
 
-3. REPOSITORY METRICS & HEALTH STATUS
+3. HOTFIX — DOCTEST LINKER ERROR (commit 26b8b4b)
 --------------------------------------------------------------------------------
-- Compiles: 100% clean on Linux x86_64 (`cargo check --workspace` -> exit code 0).
-- Test Suite: 244 tests passing across all 10 crates (0 failed, 0 ignored).
-- Codebase Scale: 26,049 lines of production Rust code (+524 LOC).
-- Git Status: All modified and new assets tracked and validated.
+  Problem:
+    `cargo test --workspace` was failing on the `Doc-tests animus_compositor`
+    phase with:
+      error: extern location for smithay does not exist:
+        /mnt/d/vitusOS/target/debug/deps/libsmithay-1c530ccb994efd02.rlib
+
+    Root cause: rustdoc's doctest runner links each doc-example against a
+    snapshot of extern rlibs taken at the start of the test run. After
+    incremental recompilation, Smithay's rlib is rebuilt under a new content
+    hash. The old path no longer exists, so rustdoc fatally errors.
+
+    animus-compositor has ZERO doc examples — all its tests are #[cfg(test)]
+    unit test blocks, which are unaffected by the doctest runner.
+
+  Fix applied (crates/animus-compositor/Cargo.toml):
+    Added [lib] section:
+      name    = "animus_compositor"
+      path    = "src/lib.rs"
+      doctest = false
+
+    This is the canonical upstream pattern used by smithay, wlroots-rs, and
+    other crates with heavy Linux-native deps. Unit tests pass unchanged.
+
+  Result:
+    cargo test --workspace -> exit code 0
+    24 test-result lines, ALL "ok. N passed; 0 failed"
+
+
+4. REPOSITORY METRICS & HEALTH STATUS (FINAL — SESSION 02)
+--------------------------------------------------------------------------------
+- Compiles:   100% clean on Linux x86_64 (exit code 0).
+- Test Suite: 244 tests / 0 failures / 0 ignored across all crates.
+- Codebase:   26,049 lines of production Rust (+524 LOC over session start).
+- Git commits this session:
+    caf29a6  (session start baseline)
+    8a7f0d6  feat: AnimusDrmBackend production DRM/KMS scanout + tests
+    26b8b4b  fix(compositor): disable doctests (smithay rlib stale-hash)
+- Remote:     origin/main fully up to date.
 ================================================================================

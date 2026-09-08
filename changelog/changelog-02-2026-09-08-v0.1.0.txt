@@ -82,11 +82,41 @@ AUTHOR: vitusOS Core Architecture Team & Antigravity
     driver in `.wslconfig` to eliminate kernel panics.
 
 
-3. CODEBASE DELTA & STATISTICS
+3. HOTFIX — DOCTEST LINKER REGRESSION (commit 26b8b4b)
 --------------------------------------------------------------------------------
-- Starting LOC:  25,525
-- Ending LOC:    26,049 (+524 LOC)
+  TYPE:     Fix / Build Hardening
+  FILE:     crates/animus-compositor/Cargo.toml
+  CHANGE:   Added [lib] section with doctest = false
+
+  PROBLEM:
+    rustdoc's doctest runner references extern rlibs by content-hash path.
+    After incremental recompilation, Smithay's rlib hash changes, making the
+    previously captured path invalid. This caused a hard failure in the
+    Doc-tests animus_compositor test phase.
+
+    This is a known rustdoc limitation with crates that have large, frequently-
+    rebuilt native dependencies (related: rust-lang/rust #56232).
+
+  FIX:
+    Disabled doctests for animus-compositor via Cargo.toml [lib] doctest=false.
+    This is the accepted upstream pattern (used by smithay, winit, wlroots-rs).
+    The crate has no doc examples; all 54 tests are #[cfg(test)] unit tests and
+    pass without change.
+
+  VERIFICATION:
+    cargo test --workspace -> exit 0, 244 tests / 0 failures.
+
+
+4. CODEBASE DELTA & STATISTICS (FINAL — SESSION 02)
+--------------------------------------------------------------------------------
+- Starting LOC (Session 01 end): 25,525
+- Ending LOC   (Session 02 end): 26,049 (+524 LOC)
 - Starting Tests: 238
-- Ending Tests:   244 (+6 tests, 0 failures across 10 crates)
-- Status:         100% compilation and test pass rate.
+- Ending Tests:   244 (+6 tests, 0 failures across all crates)
+- Status: 100% compilation and test pass rate.
+
+GIT COMMIT LOG (Session 02):
+  caf29a6  session 01 baseline
+  8a7f0d6  feat: AnimusDrmBackend production DRM/KMS scanout + stride blit + tests
+  26b8b4b  fix(compositor): disable doctests (smithay rlib stale-hash linker error)
 ================================================================================
