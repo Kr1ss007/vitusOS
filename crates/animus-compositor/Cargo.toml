@@ -54,6 +54,14 @@ ash.workspace = true
 shaderc.workspace = true
 pam = { workspace = true, optional = true }
 
+[lib]
+name = "animus_compositor"
+path = "src/lib.rs"
+# Doctests disabled: Linux-only native deps (smithay, gbm, libinput) produce
+# stale rlib-path linker errors in rustdoc's separate doctest environment.
+# All tests live in #[cfg(test)] unit test blocks which are unaffected.
+doctest = false
+
 [features]
 default = []
 pam-auth = ["pam"]
