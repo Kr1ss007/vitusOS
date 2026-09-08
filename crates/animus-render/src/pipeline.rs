@@ -13,7 +13,30 @@ use crate::altitude::SurfaceAltitude;
 use crate::color::Oklab;
 use crate::framebuffer::ScanoutFramebuffer;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
+/// A client-rendered pixel buffer attached via Wayland (wl_shm or linux_dmabuf import).
+#[derive(Debug, Clone)]
+pub struct ClientBuffer {
+    pub id: u64,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub pixels: Arc<Vec<u32>>,
+}
+
+impl ClientBuffer {
+    pub fn new(id: u64, width: u32, height: u32, pixels: Vec<u32>) -> Self {
+        let stride = width;
+        Self {
+            id,
+            width,
+            height,
+            stride,
+            pixels: Arc::new(pixels),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderWindow {
@@ -29,6 +52,8 @@ pub struct RenderWindow {
     pub altitude: SurfaceAltitude,
     pub is_visible: bool,
     pub is_focused: bool,
+    #[serde(skip)]
+    pub client_buffer: Option<ClientBuffer>,
 }
 
 pub struct RenderPipeline {
@@ -97,8 +122,29 @@ impl RenderPipeline {
             );
         }
 
-        // ── Layer 3: Window Content ─────────────────────────────────────────
-        // (Handled via scanout blit / xdg client buffer commitments)
+        // ── Layer 3: Window Content (Client Surface Pixels) ─────────────────
+        for win in windows.iter().filter(|w| w.is_visible) {
+            if let Some(buf) = &win.client_buffer {
+                let titlebar_h = 32.0f32;
+                let client_x = win.x as i32;
+                let client_y = (win.y + titlebar_h) as i32;
+                let client_w = win.width as u32;
+                let client_h = (win.height - titlebar_h).max(0.0) as u32;
+
+                self.framebuffer.blit_client_surface(
+                    &buf.pixels,
+                    buf.width,
+                    buf.height,
+                    client_x,
+                    client_y,
+                    client_w,
+                    client_h,
+                    win.height,
+                    win.corner_radius,
+                    1.0,
+                );
+            }
+        }
 
         // ── Layer 4: Shell Surfaces (Panel & Dock) ──────────────────────────
         self.render_top_panel(active_app_title);
@@ -262,9 +308,38 @@ mod tests {
             altitude: SurfaceAltitude::Mid,
             is_visible: true,
             is_focused: true,
+            client_buffer: None,
         }];
 
         pipeline.render_frame(&windows, 5, true, true, "Filer");
         assert_ne!(pipeline.framebuffer.get_pixel(150, 150), 0x0);
+    }
+
+    #[test]
+    fn test_render_pipeline_with_client_buffer() {
+        let mut pipeline = RenderPipeline::new(1920, 1080);
+        let client_pixels = vec![0xFF00FF00; 400 * 300]; // green client content
+        let buffer = ClientBuffer::new(101, 400, 300, client_pixels);
+
+        let windows = vec![RenderWindow {
+            id: 2,
+            title: "Terminow".to_string(),
+            x: 200.0,
+            y: 200.0,
+            width: 400.0,
+            height: 332.0,
+            shadow_x: 200.0,
+            shadow_y: 208.0,
+            corner_radius: 10.0,
+            altitude: SurfaceAltitude::High,
+            is_visible: true,
+            is_focused: true,
+            client_buffer: Some(buffer),
+        }];
+
+        pipeline.render_frame(&windows, 3, false, false, "Terminow");
+        // Center of window client area (y = 200 + 32 + 100 = 332, x = 200 + 200 = 400)
+        let pixel = pipeline.framebuffer.get_pixel(400, 332);
+        assert_eq!(pixel & 0x0000FF00, 0x0000FF00); // Green channel present
     }
 }

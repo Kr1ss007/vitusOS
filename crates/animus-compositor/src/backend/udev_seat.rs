@@ -69,6 +69,17 @@ impl UdevLibinputSeat {
     /// Dispatches available events from libinput into the `AnimusSeat`.
     /// Called once per frame in the main event loop.
     pub fn dispatch_events(&mut self, seat: &mut AnimusSeat) {
+        self.dispatch_events_full(seat, None, 1920.0, 1080.0);
+    }
+
+    /// Full event dispatch with boundary clamping and MotionWave gesture detection.
+    pub fn dispatch_events_full(
+        &mut self,
+        seat: &mut AnimusSeat,
+        mut motion_wave: Option<&mut animus_input::motion_wave::MotionWave>,
+        screen_w: f32,
+        screen_h: f32,
+    ) {
         #[cfg(target_os = "linux")]
         {
             if let Err(e) = self.context.dispatch() {
@@ -84,9 +95,11 @@ impl UdevLibinputSeat {
                             PointerEvent::Motion(m) => {
                                 let dx = m.dx();
                                 let dy = m.dy();
+                                let nx = (seat.pointer.x + dx).clamp(0.0, screen_w as f64);
+                                let ny = (seat.pointer.y + dy).clamp(0.0, screen_h as f64);
                                 seat.dispatch_pointer_motion(
-                                    seat.pointer.x + dx,
-                                    seat.pointer.y + dy,
+                                    nx,
+                                    ny,
                                     seat.pointer.focused_surface_id,
                                 );
                             }
@@ -107,9 +120,6 @@ impl UdevLibinputSeat {
                                 };
                                 seat.dispatch_pointer_button(pb, state, 0);
                             }
-                            PointerEvent::Axis(_) => {
-                                // Scroll events handled via PointerEventTrait::axis_value
-                            }
                             _ => {}
                         }
                     }
@@ -129,8 +139,22 @@ impl UdevLibinputSeat {
                             _ => {}
                         }
                     }
-                    Event::Touch(_touch_event) => {
-                        // Handle multi-touch gestures via MotionWave
+                    Event::Touch(touch_event) => {
+                        use input::event::touch::TouchEvent;
+                        if let Some(mw) = &mut motion_wave {
+                            match touch_event {
+                                TouchEvent::Down(_) => {
+                                    mw.on_swipe_begin(2);
+                                }
+                                TouchEvent::Up(_) => {
+                                    mw.on_swipe_end(false);
+                                }
+                                TouchEvent::Cancel(_) => {
+                                    mw.on_swipe_end(true);
+                                }
+                                _ => {}
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -139,7 +163,7 @@ impl UdevLibinputSeat {
         
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = seat;
+            let _ = (seat, motion_wave, screen_w, screen_h);
         }
     }
 }

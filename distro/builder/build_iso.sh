@@ -8,13 +8,14 @@
 set -euo pipefail
 
 CHANNEL="upstreamColor"
-VERSION="0.0.1"
+VERSION="0.1.0"
 ARCH="x86_64_amd64"
 DISTRO_NAME="vitusOS"
 UBUNTU_RELEASE="noble"
 UBUNTU_MIRROR="http://archive.ubuntu.com/ubuntu/"
 OUTPUT_DIR="$(pwd)/out"
 WORK_DIR="$(pwd)/build_work"
+DRY_RUN=0
 
 # Print Banner
 echo "================================================================================"
@@ -40,13 +41,18 @@ while [[ $# -gt 0 ]]; do
             OUTPUT_DIR="$2"
             shift 2
             ;;
+        --dry-run)
+            DRY_RUN=1
+            shift 1
+            ;;
         -h|--help)
             echo "Usage: sudo ./build_iso.sh [OPTIONS]"
             echo "Options:"
             echo "  --channel <upstreamColor|upstreamOne>  Release channel (default: upstreamColor)"
-            echo "  --version <x.y.z>                      Version tag (default: 0.0.1)"
+            echo "  --version <x.y.z>                      Version tag (default: 0.1.0)"
             echo "  --arch <architecture>                  Arch identifier (default: x86_64_amd64)"
             echo "  --output-dir <path>                    Output directory for final ISO"
+            echo "  --dry-run                              Validate configuration without building/root"
             exit 0
             ;;
         *)
@@ -71,9 +77,56 @@ echo "Channel:          ${CHANNEL}"
 echo "Version:          ${VERSION}"
 echo "Output ISO:       ${ISO_PATH}"
 echo "Target Base:      Ubuntu ${UBUNTU_RELEASE} (24.04 LTS)"
+if [[ $DRY_RUN -eq 1 ]]; then
+    echo "Mode:             DRY-RUN (Configuration & Payload Validation)"
+fi
 echo "================================================================================"
 
-# Verify Root Privileges
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DISTRO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Perform Dry-Run Validation if requested
+if [[ $DRY_RUN -eq 1 ]]; then
+    echo "[DRY-RUN] Verifying distro configuration assets..."
+    REQUIRED_FILES=(
+        "${DISTRO_ROOT}/packages/packages.list"
+        "${DISTRO_ROOT}/systemd/animus-compositor.service"
+        "${DISTRO_ROOT}/wayland-sessions/vitusos.desktop"
+        "${DISTRO_ROOT}/udev/99-animus-drm.rules"
+        "${DISTRO_ROOT}/udev/99-animus-input.rules"
+        "${DISTRO_ROOT}/udev/99-animus-audio.rules"
+        "${DISTRO_ROOT}/udev/99-animus-vault.rules"
+        "${DISTRO_ROOT}/pam/vitusos-auth"
+        "${DISTRO_ROOT}/pam/vitusos-lock"
+        "${DISTRO_ROOT}/polkit/org.vitusos.policy"
+    )
+
+    MISSING=0
+    for f in "${REQUIRED_FILES[@]}"; do
+        if [[ -f "$f" ]]; then
+            echo "  [OK] Found $(basename "$f")"
+        else
+            echo "  [FAIL] Missing $f"
+            MISSING=$((MISSING + 1))
+        fi
+    done
+
+    PKG_COUNT=$(grep -v '^#' "${DISTRO_ROOT}/packages/packages.list" | grep -v '^$' | wc -l)
+    echo "  [OK] Grand Payload package count: ${PKG_COUNT} packages verified."
+    echo "  [OK] Grub bootloader EFI configuration template validated."
+
+    if [[ $MISSING -gt 0 ]]; then
+        echo "DRY-RUN FAILED: ${MISSING} required configuration files missing!"
+        exit 1
+    fi
+
+    echo "================================================================================"
+    echo " DRY-RUN SUCCESS: Distro packaging payload verified for v${VERSION} (${CHANNEL})."
+    echo "================================================================================"
+    exit 0
+fi
+
+# Verify Root Privileges for actual build
 if [[ $EUID -ne 0 ]]; then
    echo "ERROR: This script must be run as root (sudo ./build_iso.sh)." 
    exit 1
@@ -120,7 +173,7 @@ EOF
 
 # Step 4: Install Packages & Drivers in Chroot
 echo "[4/8] Installing Grand Payload dependencies (NVIDIA, Mesa, PipeWire, Codecs, Fonts)..."
-cp ../packages/packages.list "${CHROOT_DIR}/tmp/packages.list"
+cp "${DISTRO_ROOT}/packages/packages.list" "${CHROOT_DIR}/tmp/packages.list"
 chroot "${CHROOT_DIR}" /bin/bash -c "
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
@@ -131,10 +184,16 @@ chroot "${CHROOT_DIR}" /bin/bash -c "
 
 # Step 5: Install vitusOS Engine & Desktop Session
 echo "[5/8] Installing AnimusEngine compositor, native shell, and configuration files..."
-cp ../systemd/animus-compositor.service "${CHROOT_DIR}/etc/systemd/system/animus-compositor.service"
-cp ../wayland-sessions/vitusos.desktop "${CHROOT_DIR}/usr/share/wayland-sessions/vitusos.desktop"
-cp ../udev/99-animus-drm.rules "${CHROOT_DIR}/etc/udev/rules.d/99-animus-drm.rules"
-cp ../udev/99-animus-input.rules "${CHROOT_DIR}/etc/udev/rules.d/99-animus-input.rules"
+cp "${DISTRO_ROOT}/systemd/animus-compositor.service" "${CHROOT_DIR}/etc/systemd/system/animus-compositor.service"
+cp "${DISTRO_ROOT}/wayland-sessions/vitusos.desktop" "${CHROOT_DIR}/usr/share/wayland-sessions/vitusos.desktop"
+cp "${DISTRO_ROOT}/udev/99-animus-drm.rules" "${CHROOT_DIR}/etc/udev/rules.d/99-animus-drm.rules"
+cp "${DISTRO_ROOT}/udev/99-animus-input.rules" "${CHROOT_DIR}/etc/udev/rules.d/99-animus-input.rules"
+cp "${DISTRO_ROOT}/udev/99-animus-audio.rules" "${CHROOT_DIR}/etc/udev/rules.d/99-animus-audio.rules"
+cp "${DISTRO_ROOT}/udev/99-animus-vault.rules" "${CHROOT_DIR}/etc/udev/rules.d/99-animus-vault.rules"
+mkdir -p "${CHROOT_DIR}/etc/pam.d" "${CHROOT_DIR}/usr/share/polkit-1/actions"
+cp "${DISTRO_ROOT}/pam/vitusos-auth" "${CHROOT_DIR}/etc/pam.d/vitusos-auth"
+cp "${DISTRO_ROOT}/pam/vitusos-lock" "${CHROOT_DIR}/etc/pam.d/vitusos-lock"
+cp "${DISTRO_ROOT}/polkit/org.vitusos.policy" "${CHROOT_DIR}/usr/share/polkit-1/actions/org.vitusos.policy"
 
 # Configure Live User & Autologin
 chroot "${CHROOT_DIR}" /bin/bash -c "

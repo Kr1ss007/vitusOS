@@ -112,3 +112,23 @@ impl NetworkDbusClient {
         true
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_network_dbus_client_state_and_toggle() {
+        let client = NetworkDbusClient::new();
+        assert!(client.is_wifi_enabled.load(Ordering::SeqCst));
+        assert!(client.is_networking_enabled.load(Ordering::SeqCst));
+
+        let res = client.set_wifi_enabled(false).await;
+        assert!(res);
+        assert!(!client.is_wifi_enabled.load(Ordering::SeqCst));
+
+        let aps = client.scan_wifi().await;
+        assert!(!aps.is_empty());
+        assert_eq!(aps[0].ssid, "vitusOS-Internal");
+    }
+}

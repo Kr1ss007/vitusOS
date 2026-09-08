@@ -34,11 +34,15 @@ impl AudioDbusClient {
 
         #[cfg(target_os = "linux")]
         {
-            // Execute wpctl or pactl to adjust PipeWire sink volume directly
             let pct = format!("{}%", (clamped * 100.0) as u32);
-            let _ = std::process::Command::new("wpctl")
+            let res = std::process::Command::new("wpctl")
                 .args(["set-volume", "@DEFAULT_AUDIO_SINK@", &pct])
-                .spawn();
+                .status();
+            if res.is_err() {
+                let _ = std::process::Command::new("pactl")
+                    .args(["set-sink-volume", "@DEFAULT_SINK@", &pct])
+                    .status();
+            }
         }
     }
 
@@ -50,11 +54,60 @@ impl AudioDbusClient {
 
         #[cfg(target_os = "linux")]
         {
-            let _ = std::process::Command::new("wpctl")
+            let res = std::process::Command::new("wpctl")
                 .args(["set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"])
-                .spawn();
+                .status();
+            if res.is_err() {
+                let _ = std::process::Command::new("pactl")
+                    .args(["set-sink-mute", "@DEFAULT_SINK@", "toggle"])
+                    .status();
+            }
         }
 
         new_state
+    }
+
+    /// Queries the hardware sink volume from PipeWire/WirePlumber if available.
+    pub fn query_hardware_volume(&self) -> f32 {
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(output) = std::process::Command::new("wpctl")
+                .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
+                .output()
+            {
+                let text = String::from_utf8_lossy(&output.stdout);
+                if let Some(vol_str) = text.split_whitespace().nth(1) {
+                    if let Ok(vol) = vol_str.parse::<f32>() {
+                        *self.volume.write() = vol;
+                        if text.contains("[MUTED]") {
+                            self.is_muted.store(true, Ordering::SeqCst);
+                        }
+                        return vol;
+                    }
+                }
+            }
+        }
+        *self.volume.read()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_audio_dbus_client_volume_and_mute() {
+        let client = AudioDbusClient::new();
+        assert_eq!(client.get_volume(), 0.85);
+
+        client.set_volume(0.5);
+        assert_eq!(client.get_volume(), 0.5);
+
+        let muted = client.toggle_mute();
+        assert!(muted);
+        assert!(client.is_muted.load(Ordering::SeqCst));
+
+        let unmuted = client.toggle_mute();
+        assert!(!unmuted);
     }
 }

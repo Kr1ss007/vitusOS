@@ -221,6 +221,7 @@ impl CompositorState {
                     altitude,
                     is_visible: true,
                     is_focused: surface.is_focused,
+                    client_buffer: None,
                 });
             }
         }

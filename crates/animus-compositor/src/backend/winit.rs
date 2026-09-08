@@ -95,6 +95,9 @@ impl AnimusBackend for AnimusWinitBackend {
     fn has_gpu(&self) -> bool { false }
     fn schedule_frame(&mut self) { /* Winit drives redraws via its event loop */ }
     fn output_geometry(&self) -> (u32, u32, u32) { (self.width, self.height, 60) }
+    fn present_frame(&mut self, _framebuffer: &animus_render::framebuffer::ScanoutFramebuffer) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]

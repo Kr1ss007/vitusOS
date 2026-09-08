@@ -19,7 +19,7 @@ param(
     [ValidateSet("upstreamColor", "upstreamOne")]
     [string]$Channel = "upstreamColor",
 
-    [string]$Version = "0.0.1",
+    [string]$Version = "0.1.0",
 
     [string]$Arch = "x86_64_amd64",
 

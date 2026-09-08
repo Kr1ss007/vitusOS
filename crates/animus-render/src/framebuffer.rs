@@ -332,6 +332,77 @@ impl ScanoutFramebuffer {
             self.set_pixel(col, row, (0xFF << 24) | (out_r << 16) | (out_g << 8) | out_b);
         }
     }
+
+    /// Blits a Wayland client surface buffer (shm / dmabuf) into the designated window client area.
+    ///
+    /// Applies scaling, opacity blending, and squircle corner clipping so that the client's
+    /// contents do not bleed outside the curved window frame.
+    pub fn blit_client_surface(
+        &mut self,
+        src_pixels: &[u32],
+        src_w: u32,
+        src_h: u32,
+        dst_x: i32,
+        dst_y: i32,
+        dst_w: u32,
+        dst_h: u32,
+        window_full_h: f32,
+        _corner_radius: f32,
+        alpha: f32,
+    ) {
+        if src_w == 0 || src_h == 0 || dst_w == 0 || dst_h == 0 || alpha <= 0.001 {
+            return;
+        }
+        let total_src = (src_w * src_h) as usize;
+        if src_pixels.len() < total_src {
+            return;
+        }
+
+        let min_x = dst_x.max(0) as usize;
+        let max_x = (dst_x + dst_w as i32).min(self.width as i32) as usize;
+        let min_y = dst_y.max(0) as usize;
+        let max_y = (dst_y + dst_h as i32).min(self.height as i32) as usize;
+
+        if min_x >= max_x || min_y >= max_y {
+            return;
+        }
+
+        let global_alpha = (alpha.clamp(0.0, 1.0) * 255.0) as u32;
+        let squircle = SquircleParams::for_window(dst_w as f32, window_full_h);
+        let center_x = dst_x as f32 + (dst_w as f32 * 0.5);
+        let window_top_y = (dst_y as f32) - (window_full_h - dst_h as f32);
+        let center_y = window_top_y + (window_full_h * 0.5);
+
+        for py in min_y..max_y {
+            let ly = py as f32 - center_y;
+            let sy = (((py as i32 - dst_y) as u64 * src_h as u64) / dst_h as u64) as usize;
+            let sy = sy.min(src_h as usize - 1);
+            let row_offset = sy * src_w as usize;
+
+            for px in min_x..max_x {
+                let lx = px as f32 - center_x;
+                let d = squircle.signed_distance(Vec2::new(lx, ly));
+                if d > 0.5 {
+                    continue;
+                }
+
+                let sx = (((px as i32 - dst_x) as u64 * src_w as u64) / dst_w as u64) as usize;
+                let sx = sx.min(src_w as usize - 1);
+
+                let raw_pixel = src_pixels[row_offset + sx];
+                let sa = (raw_pixel >> 24) & 0xFF;
+                if sa == 0 {
+                    continue;
+                }
+
+                let edge_coverage = (1.0 - (d + 0.5).clamp(0.0, 1.0)).clamp(0.0, 1.0);
+                let final_a = (((sa * global_alpha) / 255) as f32 * edge_coverage) as u32;
+                let final_pixel = (final_a << 24) | (raw_pixel & 0x00FFFFFF);
+
+                self.blend_pixel(px, py, final_pixel);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -348,5 +419,30 @@ mod tests {
 
         fb.draw_squircle_surface(10.0, 10.0, 100.0, 100.0, 16.0, 0xFF222226, 0xFFFFFFFF, 1.0);
         assert_ne!(fb.get_pixel(50, 50), 0xFF141416);
+    }
+
+    #[test]
+    fn test_blit_client_surface() {
+        let mut fb = ScanoutFramebuffer::new(640, 480);
+        fb.clear(0xFF000000);
+
+        // 10x10 bright red client surface
+        let client_pixels = vec![0xFFFF0000; 100];
+        fb.blit_client_surface(
+            &client_pixels,
+            10,
+            10,
+            50,
+            50,
+            50,
+            50,
+            50.0,
+            10.0,
+            1.0,
+        );
+
+        // Center pixel should be blended red
+        let center_color = fb.get_pixel(75, 75);
+        assert_eq!(center_color & 0x00FF0000, 0x00FF0000);
     }
 }

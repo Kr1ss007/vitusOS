@@ -34,4 +34,7 @@ pub trait AnimusBackend: Send {
 
     /// Returns the current output resolution (width, height, refresh_hz).
     fn output_geometry(&self) -> (u32, u32, u32);
+
+    /// Presents a composited ScanoutFramebuffer onto the backend display.
+    fn present_frame(&mut self, framebuffer: &animus_render::framebuffer::ScanoutFramebuffer) -> Result<()>;
 }

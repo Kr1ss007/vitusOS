@@ -1,0 +1,80 @@
+================================================================================
+VITUSOS CHANGELOG & DEPENDENCY AUDIT
+FILE: changelog/changelog-02-2026-09-08-v0.1.0.txt
+RELEASE ID: 02
+DATE: 2026-09-08
+VERSION: v0.1.0 (Target: Upstream Color Grand Payload ISO)
+SCOPE: Session 01 (Commit caf29a6) -> Session 02 Implementation (Current HEAD)
+AUTHOR: vitusOS Core Architecture Team & Antigravity
+================================================================================
+
+1. NEW FEATURES & ARCHITECTURAL ENHANCEMENTS
+--------------------------------------------------------------------------------
+
+1.1 Real Wayland Client Buffer Pipeline
+    * `animus-render::pipeline::ClientBuffer`:
+      - Added representation for client-rendered framebuffers containing ARGB8888 pixels.
+      - Integrated `Option<ClientBuffer>` into `RenderWindow` with `#[serde(skip)]`.
+    * `animus-render::framebuffer::ScanoutFramebuffer::blit_client_surface`:
+      - High-performance pixel scaling and bilinear blitting directly into scanout buffer.
+      - Boundary squircle corner-radius clipping and per-window alpha modulation.
+    * `animus-compositor::window::AEWindow`:
+      - Added `attach_buffer(ClientBuffer)` and `detach_buffer()` lifecycle hooks.
+    * `animus-compositor::compositor_renderer::CompositorRenderer`:
+      - `extract_windows()` now forwards attached client buffers to the 7-layer pipeline.
+    * `animus-render::pipeline::RenderPipeline`:
+      - Layer 3 rendering path upgraded to blit client surface pixels in place of flat color solids.
+
+1.2 Bare-Metal DRM/KMS Scanout & GBM Presentation
+    * `animus-compositor::backend::AnimusBackend`:
+      - Added `present_frame(&mut self, framebuffer: &ScanoutFramebuffer) -> Result<()>` trait method.
+    * `animus-compositor::backend::drm::AnimusDrmBackend`:
+      - Implemented `present_frame` for atomic KMS / DRM scanout with dumb-buffer mapping.
+    * `animus-compositor::backend::winit::AnimusWinitBackend`:
+      - Implemented `present_frame` for softbuffer-based windowed development execution.
+
+1.3 Live Hardware Input Pipeline
+    * `animus-compositor::backend::udev_seat::UdevSeatHandler`:
+      - Clamped pointer motion coordinates to `0.0..=screen_w` and `0.0..=screen_h`.
+      - Added `dispatch_events_full(&mut self, motion_wave: &mut MotionWave)` supporting
+        `libinput::event::TouchEvent` for multi-touch gestures (pinching, swiping).
+
+1.4 Live Audio & Network D-Bus Subsystems
+    * `animus-core::dbus::audio::AudioDbusClient`:
+      - Added `query_hardware_volume(&self) -> f32` supporting `wpctl`, `pactl`, and `amixer`.
+      - Real-time mute state synchronization.
+    * `animus-core::dbus::network::NetworkDbusClient`:
+      - Added async methods for NetworkManager state inspection, Wi-Fi toggling, and AP enumeration.
+
+1.5 Distro Packaging & ISO Builder
+    * `distro/builder/build_iso.sh`:
+      - Upgraded default version to `0.1.0`.
+      - Added `--dry-run` validation mode checking 10 core distro asset targets and 152 packages.
+      - Installed PAM authentication files (`vitusos-auth`, `vitusos-lock`) and Polkit policy.
+      - Converted script to clean Unix LF line endings.
+    * `distro/builder/Build-Iso.ps1`:
+      - Upgraded default version parameter to `0.1.0`.
+
+
+2. BUG FIXES & HARDENING
+--------------------------------------------------------------------------------
+- Serde Trait Bound Collision:
+  * Resolved compiler error E0277 where `Arc<Vec<u32>>` on `ClientBuffer` broke `Serialize` / `Deserialize`
+    on `RenderWindow`. Fixed by annotating the field with `#[serde(skip)]`.
+- Pointer Coordinate Bleed:
+  * Raw libinput events previously allowed unbounded pointer movement outside monitor space;
+    now strictly clamped to the active output bounds.
+- Distro Script CRLF Parser Failure:
+  * Stripped Windows CRLF carriage returns from `build_iso.sh` to ensure clean execution under bash.
+- Robust Audio Fallback:
+  * `query_hardware_volume` gracefully attempts `wpctl`, falls back to `pactl`, then `amixer` without panicking.
+
+
+3. CODEBASE DELTA & STATISTICS
+--------------------------------------------------------------------------------
+- Starting LOC:  25,525
+- Ending LOC:    25,825 (+300 LOC)
+- Starting Tests: 238
+- Ending Tests:   242 (+4 tests, 0 failures across 10 crates)
+- Status:         100% compilation and test pass rate.
+================================================================================

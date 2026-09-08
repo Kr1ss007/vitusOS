@@ -127,6 +127,9 @@ pub struct AEWindow {
     pub minimize_origin_y: f32,
     pub minimize_origin_w: f32,
     pub minimize_origin_h: f32,
+
+    // Client pixel buffer (Layer 3 scanout)
+    pub client_buffer: Option<animus_render::pipeline::ClientBuffer>,
 }
 
 impl AEWindow {
@@ -155,7 +158,16 @@ impl AEWindow {
             minimize_origin_y: y,
             minimize_origin_w: w,
             minimize_origin_h: h,
+            client_buffer: None,
         }
+    }
+
+    pub fn attach_buffer(&mut self, buffer: animus_render::pipeline::ClientBuffer) {
+        self.client_buffer = Some(buffer);
+    }
+
+    pub fn detach_buffer(&mut self) {
+        self.client_buffer = None;
     }
 
     pub fn set_target_position(&mut self, x: f32, y: f32) {

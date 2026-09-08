@@ -105,6 +105,7 @@ impl CompositorRenderer {
                 altitude,
                 is_visible: true,
                 is_focused: win.is_focused,
+                client_buffer: win.client_buffer.clone(),
             });
         }
 

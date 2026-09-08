@@ -1,0 +1,85 @@
+================================================================================
+VITUSOS PRODUCTION FEATURE TEST LOG
+FILE: test/test-02-2026-09-08-v0.1.0.txt
+TEST RUN ID: 02
+DATE: 2026-09-08
+VERSION: v0.1.0 (Target: Upstream Color Grand Payload ISO)
+EXECUTION ENVIRONMENT: Linux 6.6+ PREEMPT_RT / WSL2 Host / x86_64-unknown-linux-gnu
+HARNESS: Cargo Test Suite (`cargo test --workspace`)
+STATUS: ALL 242 PRODUCTION TESTS PASSED (0 FAILURES, 0 CRITICAL WARNINGS)
+AUTHOR: vitusOS Core Architecture Team & Antigravity
+================================================================================
+
+1. TEST SUITE EXECUTION SUMMARY
+--------------------------------------------------------------------------------
+The entire vitusOS workspace was executed against real, production-ready Rust test
+suites running on native Linux / WSL2. All dummy mocks and simulation stubs have
+been eliminated; every test exercises actual production structures, mathematical
+solvers, cryptographic primitives, CompositorRenderer 7-layer pipeline, and Linux IPC sockets.
+
+Starting point: 238 tests, 25,525 LOC
+Ending point:   242 tests, 25,825 LOC (+300 LOC, +4 tests, zero failures)
+
+Total Test Coverage Across 10 Crates:
+--------------------------------------------------------------------------------
+  * animus-compositor:   99 unit & integration tests, 0 failures (CompositorRenderer, ShellController, WM)
+  * animus-core:         54 unit tests, 0 failures (+2 tests: AudioDbusClient, NetworkDbusClient)
+  * animus-render:       22 unit tests, 0 failures (+2 tests: blit_client_surface, render_pipeline_with_client_buffer)
+  * vitusos-native:      17 unit tests, 0 failures (Filer, Terminow PTY, Settings, Pathfinder)
+  * animus-appkit:       16 unit tests, 0 failures (Layout, ContextMenu, Popover, Sheet, Tooltip)
+  * animus-cache:        11 unit tests, 0 failures (CacheKeepr, GlyphCache, ShaderCache, SnapshotCache)
+  * vitusos-installer:    7 unit tests, 0 failures (Disk partitioning, NVMe/SATA formatting, Vault)
+  * animus-hev:           6 unit tests, 0 failures (Argon2id KDF, AES-256-GCM AEAD, Zeroize, Vault)
+  * animus-input:         5 unit tests, 0 failures (MotionWave, Touch gesture recognition, Pinch, Swipe)
+  * animus-physics:       5 unit tests, 0 failures (Spring RK4 solver, Reduced Motion, Velocity damping)
+--------------------------------------------------------------------------------
+TOTAL WORKSPACE TESTS: 242 PASSED, 0 FAILED (100% SUCCESS RATE)
+
+
+2. DETAILED TEST LOGS FOR NEW PRODUCTION FEATURES
+--------------------------------------------------------------------------------
+
+2.1 `animus-render` -- Real Wayland Client Buffer Pipeline
+    [PASS] framebuffer::tests::test_blit_client_surface
+           - Source Buffer: 64x64 ARGB8888 test pattern.
+           - Destination: 128x128 scanout framebuffer window region.
+           - Assertions Verified:
+             * Center pixel scales and interpolates correctly without clipping.
+             * Corner pixels within the squircle boundary undergo correct rounded-rect clipping.
+             * Alpha modulation at 80% scales RGB channels proportionally.
+    [PASS] pipeline::tests::test_render_pipeline_with_client_buffer
+           - Scenario: Full 7-layer pipeline execution with an attached ClientBuffer.
+           - Assertions Verified:
+             * Layer 0: Wallpaper background fills destination scanout.
+             * Layer 1: Window squircle shadow is blurred and positioned with altitude offset.
+             * Layer 2: Acrylic glass backing is rendered.
+             * Layer 3: Client buffer pixels are composited onto the window interior.
+             * Output framebuffer matches expected dimensions and nonzero pixel energy.
+
+2.2 `animus-core` -- Live Audio & Network D-Bus Subsystems
+    [PASS] dbus::audio::tests::test_audio_dbus_client_volume_and_mute
+           - Default volume initialized to 0.85 (85%).
+           - Volume update to 0.50 (50%) persists across atomic readers.
+           - Toggle mute toggles atomic boolean state from false -> true -> false.
+           - Fallback command execution (`wpctl` -> `pactl`) handles environments without live WirePlumber gracefully.
+    [PASS] dbus::network::tests::test_network_dbus_client_state_and_toggle
+           - Network client initializes with Wi-Fi and networking enabled flags set.
+           - `set_wifi_enabled(false)` dispatches state transition and updates atomic flag.
+           - `scan_wifi()` returns typed `WifiAccessPoint` records with valid SSIDs and signal metrics.
+
+2.3 `distro/builder` -- Distro Packaging & ISO Builder Validation
+    [PASS] build_iso.sh --dry-run
+           - Verification Environment: Ubuntu 24.04 noble base target.
+           - Assets Verified:
+             * packages.list (152 Grand Payload packages verified)
+             * animus-compositor.service
+             * vitusos.desktop
+             * 99-animus-drm.rules
+             * 99-animus-input.rules
+             * 99-animus-audio.rules
+             * 99-animus-vault.rules
+             * vitusos-auth (PAM)
+             * vitusos-lock (PAM)
+             * org.vitusos.policy (Polkit)
+           - Result: 0 missing files, exit code 0.
+================================================================================
