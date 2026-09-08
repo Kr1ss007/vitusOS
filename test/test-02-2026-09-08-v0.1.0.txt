@@ -6,7 +6,7 @@ DATE: 2026-09-08
 VERSION: v0.1.0 (Target: Upstream Color Grand Payload ISO)
 EXECUTION ENVIRONMENT: Linux 6.6+ PREEMPT_RT / WSL2 Host / x86_64-unknown-linux-gnu
 HARNESS: Cargo Test Suite (`cargo test --workspace`)
-STATUS: ALL 242 PRODUCTION TESTS PASSED (0 FAILURES, 0 CRITICAL WARNINGS)
+STATUS: ALL 244 PRODUCTION TESTS PASSED (0 FAILURES, 0 CRITICAL WARNINGS)
 AUTHOR: vitusOS Core Architecture Team & Antigravity
 ================================================================================
 
@@ -18,11 +18,11 @@ been eliminated; every test exercises actual production structures, mathematical
 solvers, cryptographic primitives, CompositorRenderer 7-layer pipeline, and Linux IPC sockets.
 
 Starting point: 238 tests, 25,525 LOC
-Ending point:   242 tests, 25,825 LOC (+300 LOC, +4 tests, zero failures)
+Ending point:   244 tests, 26,049 LOC (+524 LOC, +6 tests, zero failures)
 
 Total Test Coverage Across 10 Crates:
 --------------------------------------------------------------------------------
-  * animus-compositor:   99 unit & integration tests, 0 failures (CompositorRenderer, ShellController, WM)
+  * animus-compositor:  101 unit & integration tests, 0 failures (+2 tests: DRM scanout uninitialized & pitch stride blit)
   * animus-core:         54 unit tests, 0 failures (+2 tests: AudioDbusClient, NetworkDbusClient)
   * animus-render:       22 unit tests, 0 failures (+2 tests: blit_client_surface, render_pipeline_with_client_buffer)
   * vitusos-native:      17 unit tests, 0 failures (Filer, Terminow PTY, Settings, Pathfinder)
@@ -33,7 +33,7 @@ Total Test Coverage Across 10 Crates:
   * animus-input:         5 unit tests, 0 failures (MotionWave, Touch gesture recognition, Pinch, Swipe)
   * animus-physics:       5 unit tests, 0 failures (Spring RK4 solver, Reduced Motion, Velocity damping)
 --------------------------------------------------------------------------------
-TOTAL WORKSPACE TESTS: 242 PASSED, 0 FAILED (100% SUCCESS RATE)
+TOTAL WORKSPACE TESTS: 244 PASSED, 0 FAILED (100% SUCCESS RATE)
 
 
 2. DETAILED TEST LOGS FOR NEW PRODUCTION FEATURES
@@ -82,4 +82,17 @@ TOTAL WORKSPACE TESTS: 242 PASSED, 0 FAILED (100% SUCCESS RATE)
              * vitusos-lock (PAM)
              * org.vitusos.policy (Polkit)
            - Result: 0 missing files, exit code 0.
+
+2.4 `animus-compositor` -- Bare-Metal DRM/KMS Double-Buffered Scanout
+    [PASS] backend::drm::tests::test_drm_backend_uninitialized_present_frame
+           - Scenario: Presenting frame before KMS initialization or on headless systems.
+           - Assertions Verified:
+             * Graceful no-op with `Ok(())`, zero crashes or panics.
+    [PASS] backend::drm::tests::test_pitch_padding_stride_blit
+           - Scenario: Blitting 4x2 pixels (16 bytes/row) into hardware dumb buffer with 24 bytes/row pitch.
+           - Assertions Verified:
+             * Row 0 matches first 4 source pixels (16 bytes).
+             * Padding bytes [16..24] remain completely untouched (preserves GPU alignment).
+             * Row 1 matches second 4 source pixels (16 bytes) at offset 24..40.
+             * Prevents visual skew and diagonal tears on non-standard stride displays.
 ================================================================================

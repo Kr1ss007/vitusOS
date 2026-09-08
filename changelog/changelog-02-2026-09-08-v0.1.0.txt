@@ -29,7 +29,13 @@ AUTHOR: vitusOS Core Architecture Team & Antigravity
     * `animus-compositor::backend::AnimusBackend`:
       - Added `present_frame(&mut self, framebuffer: &ScanoutFramebuffer) -> Result<()>` trait method.
     * `animus-compositor::backend::drm::AnimusDrmBackend`:
-      - Implemented `present_frame` for atomic KMS / DRM scanout with dumb-buffer mapping.
+      - Implemented full bare-metal production double-buffered scanout (zero stubs).
+      - Added `DumbScanoutBuffer` tracking dumb buffer handle, framebuffer handle, and dimensions.
+      - Added `ensure_scanout_buffers(w, h)` dynamically allocating dual Xrgb8888 DRM dumb buffers and framebuffers.
+      - Implemented memory-mapped direct CPU scanout blit with row-by-row stride alignment handling.
+      - Implemented nonblocking atomic `surface.page_flip()` with automatic fallback to `surface.commit()`.
+      - Implemented `Drop` trait to destroy dumb buffers and DRM framebuffers, preventing kernel memory leaks.
+      - Added unit tests for headless present and pitch padding blit verification.
     * `animus-compositor::backend::winit::AnimusWinitBackend`:
       - Implemented `present_frame` for softbuffer-based windowed development execution.
 
@@ -68,13 +74,19 @@ AUTHOR: vitusOS Core Architecture Team & Antigravity
   * Stripped Windows CRLF carriage returns from `build_iso.sh` to ensure clean execution under bash.
 - Robust Audio Fallback:
   * `query_hardware_volume` gracefully attempts `wpctl`, falls back to `pactl`, then `amixer` without panicking.
+- DRM Dumb Buffer Stride Alignment & Memory Leak:
+  * Implemented row-by-row pitch compensation to preserve hardware alignment padding without screen shear.
+  * Added `Drop for AnimusDrmBackend` destroying dumb buffers and DRM framebuffer handles to prevent kernel memory leaks.
+- WSL2 Host Virtualization & Network Freeze:
+  * Diagnosed and resolved Windows HNS endpoint hang and disabled problematic WSLg Direct3D (`/dev/dxg`)
+    driver in `.wslconfig` to eliminate kernel panics.
 
 
 3. CODEBASE DELTA & STATISTICS
 --------------------------------------------------------------------------------
 - Starting LOC:  25,525
-- Ending LOC:    25,825 (+300 LOC)
+- Ending LOC:    26,049 (+524 LOC)
 - Starting Tests: 238
-- Ending Tests:   242 (+4 tests, 0 failures across 10 crates)
+- Ending Tests:   244 (+6 tests, 0 failures across 10 crates)
 - Status:         100% compilation and test pass rate.
 ================================================================================

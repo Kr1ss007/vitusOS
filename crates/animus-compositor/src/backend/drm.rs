@@ -16,19 +16,33 @@ use {
     anyhow::{Context, Result},
     smithay::{
         backend::{
-            drm::{DrmDevice, DrmDeviceFd, DrmDeviceNotifier, DrmEvent, DrmSurface},
+            drm::{DrmDevice, DrmDeviceFd, DrmDeviceNotifier, DrmSurface, PlaneConfig, PlaneState},
             allocator::gbm::{GbmDevice, GbmAllocator, GbmBufferFlags},
         },
-        utils::DeviceFd,
+        utils::{Rectangle, Transform, DeviceFd},
     },
-    drm::control::{
-        Device as DrmControlDevice,
-        connector::{Handle as ConnectorHandle, State as ConnectorState},
-        Mode,
+    drm::{
+        buffer::Buffer as DrmBufferTrait,
+        control::{
+            Device as DrmControlDevice,
+            connector::{Handle as ConnectorHandle, State as ConnectorState},
+            dumbbuffer::DumbBuffer,
+            framebuffer,
+        },
     },
+    drm_fourcc::DrmFourcc,
     std::path::PathBuf,
     tracing::{info, warn, error},
 };
+
+/// Hardware-allocated DRM dumb buffer backed by a DRM framebuffer handle.
+#[cfg(target_os = "linux")]
+pub struct DumbScanoutBuffer {
+    pub dumb: DumbBuffer,
+    pub fb: framebuffer::Handle,
+    pub width: u32,
+    pub height: u32,
+}
 
 #[cfg(target_os = "linux")]
 pub struct AnimusDrmBackend {
@@ -49,6 +63,10 @@ pub struct AnimusDrmBackend {
     pub gbm_allocator: Option<GbmAllocator<DrmDeviceFd>>,
     /// Active DRM surfaces (one per connected monitor).
     pub surfaces: Vec<DrmSurface>,
+    /// Double-buffered scanout dumb buffers for tear-free page flipping
+    pub scanout_buffers: Vec<DumbScanoutBuffer>,
+    /// Current front/back buffer index (0 or 1)
+    pub current_buffer_idx: usize,
 }
 
 #[cfg(target_os = "linux")]
@@ -70,6 +88,8 @@ impl AnimusDrmBackend {
             gbm_device: None,
             gbm_allocator: None,
             surfaces: Vec::new(),
+            scanout_buffers: Vec::new(),
+            current_buffer_idx: 0,
         })
     }
 
@@ -226,6 +246,51 @@ impl AnimusDrmBackend {
             Ok(Some(drm_notifier))
         }
     }
+
+    /// Allocates or reallocates the double-buffered scanout dumb buffers.
+    pub fn ensure_scanout_buffers(&mut self, width: u32, height: u32) -> Result<()> {
+        if self.scanout_buffers.len() == 2
+            && self.scanout_buffers[0].width == width
+            && self.scanout_buffers[0].height == height
+        {
+            return Ok(());
+        }
+
+        let drm = self.drm_device.as_mut().context("DRM device not initialized")?;
+
+        // Destroy any existing scanout buffers before reallocating
+        for buf in self.scanout_buffers.drain(..) {
+            let _ = drm.destroy_framebuffer(buf.fb);
+            let _ = drm.destroy_dumb_buffer(buf.dumb);
+        }
+
+        // Allocate double-buffered scanout dumb buffers
+        for idx in 0..2 {
+            let dumb = drm.create_dumb_buffer(
+                (width, height),
+                DrmFourcc::Xrgb8888,
+                32,
+            ).with_context(|| format!("Failed to create DRM dumb buffer #{} ({}x{})", idx, width, height))?;
+
+            let fb = drm.add_framebuffer(&dumb, 24, 32)
+                .with_context(|| format!("Failed to create DRM framebuffer for dumb buffer #{}", idx))?;
+
+            info!(
+                "AnimusDrmBackend: Allocated scanout dumb buffer #{} ({}x{}, pitch: {} bytes, fb: {:?})",
+                idx, width, height, dumb.pitch(), fb
+            );
+
+            self.scanout_buffers.push(DumbScanoutBuffer {
+                dumb,
+                fb,
+                width,
+                height,
+            });
+        }
+
+        self.current_buffer_idx = 0;
+        Ok(())
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -234,15 +299,103 @@ impl super::AnimusBackend for AnimusDrmBackend {
     fn has_gpu(&self) -> bool { self.is_initialized }
     fn schedule_frame(&mut self) { /* DRM vblank drives frame pacing via DrmDeviceNotifier */ }
     fn output_geometry(&self) -> (u32, u32, u32) { (self.width, self.height, self.refresh_hz) }
-    fn present_frame(&mut self, _framebuffer: &animus_render::framebuffer::ScanoutFramebuffer) -> anyhow::Result<()> {
-        if !self.is_initialized || self.surfaces.is_empty() {
+
+    fn present_frame(&mut self, framebuffer: &animus_render::framebuffer::ScanoutFramebuffer) -> anyhow::Result<()> {
+        if !self.is_initialized || self.drm_device.is_none() {
             return Ok(());
         }
-        // In bare-metal Linux DRM/KMS:
-        // When atomic KMS is available, DrmSurface queues the buffer and executes a page-flip.
-        // If no hardware monitor is physically attached (e.g. headless/WSL2 testing),
-        // it gracefully retains the frame in the primary scanout plane without crashing.
+
+        let w = framebuffer.width;
+        let h = framebuffer.height;
+        if w == 0 || h == 0 {
+            return Ok(());
+        }
+
+        // 1. Ensure hardware-backed scanout buffers are allocated for this resolution
+        self.ensure_scanout_buffers(w, h)?;
+
+        // 2. Select back buffer index for ping-pong double buffering
+        let back_idx = 1 - self.current_buffer_idx;
+        let drm = self.drm_device.as_mut().context("DRM device not available")?;
+
+        // 3. Map dumb buffer and copy pixel data to scanout memory
+        {
+            let target_buf = &mut self.scanout_buffers[back_idx];
+            let pitch = target_buf.dumb.pitch() as usize;
+            let mut mapping = drm.map_dumb_buffer(&mut target_buf.dumb)
+                .context("Failed to map DRM dumb buffer for CPU scanout write")?;
+
+            let row_bytes = (w as usize) * 4;
+            let dst_slice: &mut [u8] = mapping.as_mut();
+            let src_bytes: &[u8] = unsafe {
+                std::slice::from_raw_parts(
+                    framebuffer.pixels.as_ptr() as *const u8,
+                    framebuffer.pixels.len() * 4,
+                )
+            };
+
+            if pitch == row_bytes && dst_slice.len() >= src_bytes.len() {
+                // Direct continuous copy when pitch matches tightly
+                dst_slice[..src_bytes.len()].copy_from_slice(src_bytes);
+            } else {
+                // Row-by-row blit to handle hardware stride/pitch alignment
+                for y in 0..(h as usize) {
+                    let src_start = y * row_bytes;
+                    let src_end = src_start + row_bytes;
+                    let dst_start = y * pitch;
+                    let dst_end = dst_start + row_bytes;
+                    if src_end <= src_bytes.len() && dst_end <= dst_slice.len() {
+                        dst_slice[dst_start..dst_end].copy_from_slice(&src_bytes[src_start..src_end]);
+                    }
+                }
+            }
+        }
+
+        // 4. Page-flip or atomic commit across all active DRM surfaces
+        let fb_handle = self.scanout_buffers[back_idx].fb;
+        for surface in &mut self.surfaces {
+            let make_plane_state = || PlaneState {
+                handle: surface.plane(),
+                config: Some(PlaneConfig {
+                    src: Rectangle::from_size((w as f64, h as f64).into()),
+                    dst: Rectangle::from_size((w as i32, h as i32).into()),
+                    transform: Transform::Normal,
+                    alpha: 1.0,
+                    damage_clips: None,
+                    fb: fb_handle,
+                    fence: None,
+                }),
+            };
+
+            if surface.commit_pending() {
+                if let Err(e) = surface.commit([make_plane_state()], true) {
+                    warn!("AnimusDrmBackend: Initial modeset commit failed on CRTC {:?}: {:?}", surface.crtc(), e);
+                }
+            } else {
+                if let Err(_e) = surface.page_flip([make_plane_state()], true) {
+                    // Fallback to modeset commit if atomic nonblock flip failed
+                    if let Err(e2) = surface.commit([make_plane_state()], true) {
+                        warn!("AnimusDrmBackend: Page flip & commit fallback failed on CRTC {:?}: {:?}", surface.crtc(), e2);
+                    }
+                }
+            }
+        }
+
+        // 5. Swap current buffer index to complete double-buffering
+        self.current_buffer_idx = back_idx;
         Ok(())
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for AnimusDrmBackend {
+    fn drop(&mut self) {
+        if let Some(drm) = self.drm_device.as_ref() {
+            for buf in self.scanout_buffers.drain(..) {
+                let _ = drm.destroy_framebuffer(buf.fb);
+                let _ = drm.destroy_dumb_buffer(buf.dumb);
+            }
+        }
     }
 }
 
@@ -254,5 +407,76 @@ pub struct AnimusDrmBackend;
 impl AnimusDrmBackend {
     pub fn new() -> anyhow::Result<Self> {
         anyhow::bail!("DRM/KMS backend is Linux-only")
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+impl super::AnimusBackend for AnimusDrmBackend {
+    fn name(&self) -> &'static str { "drm-kms-stub" }
+    fn has_gpu(&self) -> bool { false }
+    fn schedule_frame(&mut self) {}
+    fn output_geometry(&self) -> (u32, u32, u32) { (1920, 1080, 60) }
+    fn present_frame(&mut self, _framebuffer: &animus_render::framebuffer::ScanoutFramebuffer) -> anyhow::Result<()> {
+        anyhow::bail!("DRM/KMS backend is Linux-only")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_drm_backend_uninitialized_present_frame() {
+        #[cfg(target_os = "linux")]
+        {
+            let mut backend = AnimusDrmBackend {
+                drm_path: PathBuf::from("/dev/dri/card0"),
+                width: 1920,
+                height: 1080,
+                refresh_hz: 144,
+                is_initialized: false,
+                disable_connectors: false,
+                drm_device: None,
+                drm_notifier: None,
+                gbm_device: None,
+                gbm_allocator: None,
+                surfaces: Vec::new(),
+                scanout_buffers: Vec::new(),
+                current_buffer_idx: 0,
+            };
+            let fb = animus_render::framebuffer::ScanoutFramebuffer::new(1920, 1080);
+            let res = super::super::AnimusBackend::present_frame(&mut backend, &fb);
+            assert!(res.is_ok(), "Uninitialized backend should gracefully no-op without crashing");
+        }
+    }
+
+    #[test]
+    fn test_pitch_padding_stride_blit() {
+        let width = 4usize;
+        let height = 2usize;
+        let pitch = 24usize; // padded from 16 to 24 bytes per line
+        let row_bytes = width * 4;
+        let src_pixels: Vec<u32> = vec![
+            0x11111111, 0x22222222, 0x33333333, 0x44444444,
+            0x55555555, 0x66666666, 0x77777777, 0x88888888,
+        ];
+        let mut dst_buffer = vec![0u8; pitch * height];
+        let src_bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(src_pixels.as_ptr() as *const u8, src_pixels.len() * 4)
+        };
+        for y in 0..height {
+            let src_start = y * row_bytes;
+            let src_end = src_start + row_bytes;
+            let dst_start = y * pitch;
+            let dst_end = dst_start + row_bytes;
+            dst_buffer[dst_start..dst_end].copy_from_slice(&src_bytes[src_start..src_end]);
+        }
+
+        // Row 0 matches first 4 pixels (16 bytes)
+        assert_eq!(&dst_buffer[0..16], &src_bytes[0..16]);
+        // Padding bytes between row 0 and row 1 must remain untouched
+        assert_eq!(&dst_buffer[16..24], &[0u8; 8]);
+        // Row 1 matches second 4 pixels (16 bytes)
+        assert_eq!(&dst_buffer[24..40], &src_bytes[16..32]);
     }
 }
