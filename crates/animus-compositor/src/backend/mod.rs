@@ -14,7 +14,6 @@ pub mod drm;
 pub mod winit;
 pub mod udev_seat;
 
-#[cfg(target_os = "linux")]
 pub use self::drm::AnimusDrmBackend;
 pub use self::winit::AnimusWinitBackend;
 pub use self::udev_seat::UdevLibinputSeat;
@@ -37,4 +36,10 @@ pub trait AnimusBackend: Send {
 
     /// Presents a composited ScanoutFramebuffer onto the backend display.
     fn present_frame(&mut self, framebuffer: &animus_render::framebuffer::ScanoutFramebuffer) -> Result<()>;
+
+    /// Downcast helper to concrete backend reference.
+    fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Downcast helper to mutable concrete backend reference.
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }

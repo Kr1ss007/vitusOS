@@ -1,39 +1,64 @@
 [Unit]
 Description=vitusOS AnimusEngine Wayland Compositor & Display Server
 Documentation=https://github.com/vitusOS/vitusos
-After=vitusos-session.service systemd-user-sessions.service plymouth-quit-wait.service systemd-udevd.service
+# Start after session manager, udev, and audio subsystem.
+# Plymouth is NOT used -- AnimusBoot + animus-early own the display from UEFI.
+After=vitusos-session.service systemd-user-sessions.service systemd-udevd.service
 After=pipewire.service wireplumber.service
 Requires=vitusos-session.service
 Before=graphical.target
 Wants=pipewire.service wireplumber.service
-Conflicts=getty@tty1.service
+# Explicitly conflict with getty so tty1 can never race with our compositor
+Conflicts=getty@tty1.service autovt@tty7.service
 
 [Service]
 Type=simple
 Environment=XDG_CURRENT_DESKTOP=vitusOS
 Environment=XDG_SESSION_TYPE=wayland
 Environment=XDG_SESSION_DESKTOP=vitusOS
-Environment=WLR_RENDERER=vulkan
-Environment=WLR_NO_HARDWARE_CURSORS=0
-Environment=ANIMUS_LOG=info
+# NVIDIA RTX 3050 + Intel UHD PRIME (HP Victus 15)
+# animus-compositor uses i915 (eDP-1 primary display) + nvidia (PRIME render offload)
+Environment=__GLX_VENDOR_LIBRARY_NAME=nvidia
+Environment=__NV_PRIME_RENDER_OFFLOAD=1
+Environment=__VK_LAYER_NV_optimus=NVIDIA_only
+Environment=__GL_GSYNC_ALLOWED=1
+Environment=__GL_VRR_ALLOWED=1
+# Wayland toolkit backend hints
 Environment=QT_QPA_PLATFORM=wayland;xcb
 Environment=GDK_BACKEND=wayland,x11
 Environment=MOZ_ENABLE_WAYLAND=1
+# Log level: errors only (no info spam in journal during boot)
+Environment=ANIMUS_LOG=error
+Environment=RUST_LOG=error
+# VT 7 ownership -- compositor owns this VT exclusively
+# No text console will ever appear on the physical display
+TTYPath=/dev/tty7
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
 ExecStart=/usr/bin/animus-compositor
-Restart=always
-RestartSec=1s
+Restart=on-failure
+RestartSec=2s
+# Direct stdout/stderr to journal only. Never to a TTY.
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=animus-compositor
+# Graceful shutdown: SIGTERM, then SIGKILL after 5s
+KillSignal=SIGTERM
+SendSIGKILL=yes
+TimeoutStopSec=5s
 PAMName=login
 User=vitus
 Group=vitus
-SupplementaryGroups=video render input audio plugdev
+SupplementaryGroups=video render input audio plugdev seat
 
 # Resource Limits for real-time physics & low latency rendering
 LimitNOFILE=65536
 LimitMEMLOCK=infinity
 CPUSchedulingPolicy=rr
 CPUSchedulingPriority=50
+# Allow compositor to mlock GPU/compositor buffers
+AmbientCapabilities=CAP_SYS_NICE CAP_IPC_LOCK
 
 [Install]
 WantedBy=graphical.target

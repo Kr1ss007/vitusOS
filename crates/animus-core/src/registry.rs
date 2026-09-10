@@ -317,7 +317,7 @@ impl ClientRegistry {
             for pid in pids {
                 if Self::process_exists(pid) {
                     // SAFETY: kill is a standard POSIX call, SIGUSR1 is safe
-                    let _ = unsafe { libc_kill(pid as i32, libc_SIGUSR1) };
+                    let _ = unsafe { libc_kill(pid as i32, LIBC_SIGUSR1) };
                     info!("ClientRegistry: Sent SIGUSR1 to surviving native client PID {}", pid);
                 }
             }
@@ -339,7 +339,7 @@ unsafe fn libc_kill(pid: i32, sig: i32) -> i32 {
     kill(pid, sig)
 }
 #[cfg(unix)]
-const libc_SIGUSR1: i32 = 10; // SIGUSR1 on Linux x86_64
+const LIBC_SIGUSR1: i32 = 10; // SIGUSR1 on Linux x86_64
 
 // ── RegistryManager: owns all four registries + config schemas ───────────────
 

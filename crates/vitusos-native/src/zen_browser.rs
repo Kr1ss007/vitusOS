@@ -5,8 +5,6 @@
 
 use std::path::Path;
 use animus_core::event_bus::EventBus;
-use animus_physics::spring::{SpringProfile, SpringSolver};
-use animus_render::altitude::SurfaceAltitude;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -169,26 +167,22 @@ impl ZenBrowserManager {
            .env("GDK_BACKEND", "wayland")
            .env("MOZ_ACCELERATED", "1");
 
-        #[cfg(target_os = "linux")]
-        {
-            if let Ok(child) = cmd.spawn() {
-                self.is_running = true;
-                return Ok(child);
-            }
-            // Fallback to Flatpak package
-            let mut flatpak_cmd = std::process::Command::new("flatpak");
-            flatpak_cmd.args(["run", "io.github.zen_browser.zen"]);
-            if let Ok(child) = flatpak_cmd.spawn() {
-                self.is_running = true;
-                return Ok(child);
-            }
+        if let Ok(child) = cmd.spawn() {
+            self.is_running = true;
+            return Ok(child);
+        }
+        // Fallback to Flatpak package
+        let mut flatpak_cmd = std::process::Command::new("flatpak");
+        flatpak_cmd.args(["run", "io.github.zen_browser.zen"]);
+        if let Ok(child) = flatpak_cmd.spawn() {
+            self.is_running = true;
+            return Ok(child);
         }
 
-        let child = std::process::Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
-            .args(if cfg!(target_os = "windows") { &["/C", "echo zen-browser"] } else { &["-c", "echo zen-browser"] })
-            .spawn()?;
-        self.is_running = true;
-        Ok(child)
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Zen Browser binary not found in PATH or Flatpak runtime",
+        ))
     }
 
     /// Toggles compact sidebar mode (48px icon-only vs 240px full tab list).

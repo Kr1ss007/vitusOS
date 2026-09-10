@@ -1,5 +1,5 @@
 CC ?= gcc
-CFLAGS ?= -O3 -Wall -Wextra -std=c11 $(shell pkg-config --cflags libdrm libpipewire-0.3)
+CFLAGS ?= -O3 -Wall -Wextra -std=c11 -D_GNU_SOURCE $(shell pkg-config --cflags libdrm libpipewire-0.3)
 LDFLAGS ?= $(shell pkg-config --libs libdrm libpipewire-0.3)
 
 TARGET = animus-early

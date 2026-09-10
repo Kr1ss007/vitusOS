@@ -67,19 +67,10 @@ impl PackageManager {
             progress: 0.45,
         });
 
-        // In Linux/Ubuntu environment, invokes apt-get; on dev host simulates progress
-        #[cfg(target_os = "linux")]
-        {
-            let status = Command::new("apt-get")
-                .args(["install", "-y", package])
-                .status();
-            status.map(|s| s.success()).unwrap_or(false)
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            true
-        }
+        let status = Command::new("apt-get")
+            .args(["install", "-y", package])
+            .status();
+        status.map(|s| s.success()).unwrap_or(false)
     }
 
     fn install_flatpak(package: &str, bus: &EventBus) -> bool {
@@ -89,18 +80,10 @@ impl PackageManager {
             progress: 0.50,
         });
 
-        #[cfg(target_os = "linux")]
-        {
-            let status = Command::new("flatpak")
-                .args(["install", "-y", "flathub", package])
-                .status();
-            status.map(|s| s.success()).unwrap_or(false)
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            true
-        }
+        let status = Command::new("flatpak")
+            .args(["install", "-y", "flathub", package])
+            .status();
+        status.map(|s| s.success()).unwrap_or(false)
     }
 
     fn install_snap(package: &str, bus: &EventBus) -> bool {
@@ -110,18 +93,10 @@ impl PackageManager {
             progress: 0.50,
         });
 
-        #[cfg(target_os = "linux")]
-        {
-            let status = Command::new("snap")
-                .args(["install", package])
-                .status();
-            status.map(|s| s.success()).unwrap_or(false)
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            true
-        }
+        let status = Command::new("snap")
+            .args(["install", package])
+            .status();
+        status.map(|s| s.success()).unwrap_or(false)
     }
 }
 

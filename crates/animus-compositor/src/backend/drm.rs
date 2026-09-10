@@ -44,7 +44,6 @@ pub struct DumbScanoutBuffer {
     pub height: u32,
 }
 
-#[cfg(target_os = "linux")]
 pub struct AnimusDrmBackend {
     pub drm_path: PathBuf,
     pub width: u32,
@@ -69,7 +68,6 @@ pub struct AnimusDrmBackend {
     pub current_buffer_idx: usize,
 }
 
-#[cfg(target_os = "linux")]
 impl AnimusDrmBackend {
     /// Finds the primary DRM device and prepares the backend.
     pub fn new() -> Result<Self> {
@@ -93,18 +91,55 @@ impl AnimusDrmBackend {
         })
     }
 
-    /// Finds the first available DRM card device under /dev/dri/
+    /// Finds the primary DRM device and prepares the backend.
+    /// Prefers the card with an actively connected physical display (e.g. eDP-1 on Intel i915).
     fn find_primary_drm_device() -> Result<PathBuf> {
-        for entry in std::fs::read_dir("/dev/dri")
-            .context("Cannot open /dev/dri -- no DRM subsystem available")?
-        {
-            let entry = entry?;
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if name_str.starts_with("card") {
-                return Ok(entry.path());
+        // 1. Check /sys/class/drm for any card with status == "connected"
+        if let Ok(entries) = std::fs::read_dir("/sys/class/drm") {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                // Match connector directories like "card1-eDP-1" or "card0-DP-1"
+                if name_str.starts_with("card") && name_str.contains('-') {
+                    let status_path = entry.path().join("status");
+                    if let Ok(status) = std::fs::read_to_string(&status_path) {
+                        if status.trim() == "connected" {
+                            if let Some(card_part) = name_str.split('-').next() {
+                                let dev_path = PathBuf::from("/dev/dri").join(card_part);
+                                if dev_path.exists() {
+                                    info!("AnimusDrmBackend: Found active connected display on {:?} ({})", dev_path, name_str);
+                                    return Ok(dev_path);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
+
+        // 2. Fallback: check boot_vga on cards
+        for i in 0..8 {
+            let card_name = format!("card{}", i);
+            let boot_vga_path = format!("/sys/class/drm/{}/device/boot_vga", card_name);
+            if let Ok(vga) = std::fs::read_to_string(&boot_vga_path) {
+                if vga.trim() == "1" {
+                    let dev_path = PathBuf::from(format!("/dev/dri/card{}", i));
+                    if dev_path.exists() {
+                        info!("AnimusDrmBackend: Found boot_vga device {:?}", dev_path);
+                        return Ok(dev_path);
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback: check existing cards in /dev/dri
+        for i in 0..8 {
+            let p = PathBuf::from(format!("/dev/dri/card{}", i));
+            if p.exists() {
+                return Ok(p);
+            }
+        }
+
         anyhow::bail!("No DRM card device found in /dev/dri")
     }
 
@@ -293,7 +328,6 @@ impl AnimusDrmBackend {
     }
 }
 
-#[cfg(target_os = "linux")]
 impl super::AnimusBackend for AnimusDrmBackend {
     fn name(&self) -> &'static str { "drm-kms" }
     fn has_gpu(&self) -> bool { self.is_initialized }
@@ -334,9 +368,12 @@ impl super::AnimusBackend for AnimusDrmBackend {
                 )
             };
 
-            if pitch == row_bytes && dst_slice.len() >= src_bytes.len() {
+            let dst_len = src_bytes.len();
+            if pitch == row_bytes && dst_slice.len() >= dst_len {
                 // Direct continuous copy when pitch matches tightly
-                dst_slice[..src_bytes.len()].copy_from_slice(src_bytes);
+                if let Some(target) = dst_slice.get_mut(..dst_len) {
+                    target.copy_from_slice(src_bytes);
+                }
             } else {
                 // Row-by-row blit to handle hardware stride/pitch alignment
                 for y in 0..(h as usize) {
@@ -345,7 +382,11 @@ impl super::AnimusBackend for AnimusDrmBackend {
                     let dst_start = y * pitch;
                     let dst_end = dst_start + row_bytes;
                     if src_end <= src_bytes.len() && dst_end <= dst_slice.len() {
-                        dst_slice[dst_start..dst_end].copy_from_slice(&src_bytes[src_start..src_end]);
+                        if let Some(target) = dst_slice.get_mut(dst_start..dst_end) {
+                            if let Some(src) = src_bytes.get(src_start..src_end) {
+                                target.copy_from_slice(src);
+                            }
+                        }
                     }
                 }
             }
@@ -385,9 +426,16 @@ impl super::AnimusBackend for AnimusDrmBackend {
         self.current_buffer_idx = back_idx;
         Ok(())
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
-#[cfg(target_os = "linux")]
 impl Drop for AnimusDrmBackend {
     fn drop(&mut self) {
         if let Some(drm) = self.drm_device.as_ref() {
@@ -399,37 +447,13 @@ impl Drop for AnimusDrmBackend {
     }
 }
 
-// Non-Linux stub so the module compiles on Windows during development
-#[cfg(not(target_os = "linux"))]
-pub struct AnimusDrmBackend;
-
-#[cfg(not(target_os = "linux"))]
-impl AnimusDrmBackend {
-    pub fn new() -> anyhow::Result<Self> {
-        anyhow::bail!("DRM/KMS backend is Linux-only")
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-impl super::AnimusBackend for AnimusDrmBackend {
-    fn name(&self) -> &'static str { "drm-kms-stub" }
-    fn has_gpu(&self) -> bool { false }
-    fn schedule_frame(&mut self) {}
-    fn output_geometry(&self) -> (u32, u32, u32) { (1920, 1080, 60) }
-    fn present_frame(&mut self, _framebuffer: &animus_render::framebuffer::ScanoutFramebuffer) -> anyhow::Result<()> {
-        anyhow::bail!("DRM/KMS backend is Linux-only")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_drm_backend_uninitialized_present_frame() {
-        #[cfg(target_os = "linux")]
-        {
-            let mut backend = AnimusDrmBackend {
+        let mut backend = AnimusDrmBackend {
                 drm_path: PathBuf::from("/dev/dri/card0"),
                 width: 1920,
                 height: 1080,
@@ -447,7 +471,6 @@ mod tests {
             let fb = animus_render::framebuffer::ScanoutFramebuffer::new(1920, 1080);
             let res = super::super::AnimusBackend::present_frame(&mut backend, &fb);
             assert!(res.is_ok(), "Uninitialized backend should gracefully no-op without crashing");
-        }
     }
 
     #[test]

@@ -1,0 +1,151 @@
+================================================================================
+VITUSOS TEST SUITE EXECUTION & VERIFICATION MATRIX
+FILE: test/test-03-2026-09-09-v0.1.0.txt
+TEST RUN ID: 03
+DATE: 2026-09-09
+VERSION: v0.1.0 (Target: Upstream Color Grand Payload ISO / KVM Virtual Machine)
+ENVIRONMENT: Linux x86_64 / HP Victus 15 (Intel i5-13420H + RTX 3050) / KVM
+AUTHOR: vitusOS Quality Assurance & Antigravity
+================================================================================
+
+1. TEST OBJECTIVES & PASS CRITERIA
+--------------------------------------------------------------------------------
+1. Zero Kernel Panics, Zero OOPS, Zero Stutter, Zero Memory Leaks.
+2. 100% Workspace Test Pass Rate (`cargo test --workspace`).
+3. Clean PE32+ UEFI executable generation (`AnimusBoot.efi`) and FAT32 ESP image.
+4. Clean C11 compilation of early boot splash daemon (`animus-early`).
+5. Hardware verification of CPU & GPU topology (Intel Raptor Lake UHD + NVIDIA RTX 3050).
+6. Complete elimination of Plymouth and getty console artifacts on display.
+7. Working KVM/QEMU boot and desktop simulation runner (`vitusos-simulation`).
+8. Single canonical WAV audio asset (`assets/sounds/boot_chime.wav`) with zero MP3 dependencies.
+
+
+2. AUTOMATED TEST SUITE SUMMARY (`cargo test --workspace`)
+--------------------------------------------------------------------------------
+Command: cargo test --workspace
+Total Tests Executed: 244 unit tests, 10 doc-tests
+Passed: 244
+Failed: 0
+Ignored: 0
+Pass Rate: 100.0%
+
+Per-Crate Breakdown:
+--------------------------------------------------------------------------------
+1. animus-compositor:  101 passed, 0 failed
+   - backend::winit::test_winit_backend_creation ........................... PASS
+   - backend::drm::test_pitch_padding_stride_blit .......................... PASS
+   - backend::drm::test_drm_backend_uninitialized_present_frame ............ PASS
+   - shell::cockpit_view::* (8 tests) ...................................... PASS
+   - shell::dock::test_dock_magnification_and_launch ....................... PASS
+   - shell::global_menu::* (8 tests) ....................................... PASS
+   - shell::lock_screen::* (2 tests) ....................................... PASS
+   - shell::login_manager::test_login_manager_session_start ................ PASS
+   - shell::notifications::* (6 tests) ..................................... PASS
+   - shell::control_center::test_control_center_state_and_toggle ........... PASS
+   - shell::panel::* (2 tests) ............................................. PASS
+   - shell::personality::* (2 tests) ....................................... PASS
+   - shell::shutdown_screen::test_shutdown_screen_countdown_and_cancel ..... PASS
+   - shell::system_screen::test_system_screen_exact_strings_and_fade ....... PASS
+   - shell::welcome_screen::* (9 tests) .................................... PASS
+   - shell_controller::* (13 tests) ........................................ PASS
+   - sound_manager::* (4 tests) ............................................ PASS
+   - wayland::ae_shell::* (2 tests) ........................................ PASS
+   - wayland::output::* (2 tests) .......................................... PASS
+   - wayland::seat::* (2 tests) ............................................ PASS
+   - wayland::xdg_shell::* (2 tests) ....................................... PASS
+   - wayland::tests::test_wayland_display_socket_path ...................... PASS
+   - window::* (4 tests) ................................................... PASS
+   - window_manager::* (9 tests) ........................................... PASS
+   - workspace::* (5 tests) ................................................ PASS
+   - compositor_renderer::* (4 tests) ...................................... PASS
+
+2. animus-core: 54 passed, 0 failed
+   - crash::* (4 tests) .................................................... PASS
+   - dbus::* (4 tests) ..................................................... PASS
+   - eobus::* (2 tests) .................................................... PASS
+   - portal::* (3 tests) ................................................... PASS
+   - power::* (6 tests) .................................................... PASS
+   - registry::* (7 tests) ................................................. PASS
+   - sound::test_sound_engine_boot_chime_resolution (WAV only) ............. PASS
+   - state::* (4 tests) .................................................... PASS
+   - event_bus::* (12 tests) ............................................... PASS
+   - Remaining core tests .................................................. PASS
+
+3. animus-render: 22 passed, 0 failed
+   - font_manager::test_parse_canonical_system_fonts ....................... PASS
+   - glyph_atlas::test_gamma_correct_blending .............................. PASS
+   - gpu::vulkan::test_shader_dir_resolution ............................... PASS
+   - gpu::vulkan::test_spirv_stub_on_non_linux ............................. PASS
+   - gpu::vulkan::test_vulkan_renderer_initialization ....................... PASS
+   - squircle::test_squircle_geometry_and_distances ........................ PASS
+   - framebuffer::test_scanout_framebuffer_lifecycle ....................... PASS
+   - framebuffer::test_blit_client_surface ................................. PASS
+   - text_renderer::* (8 tests) ............................................ PASS
+   - typography::test_font_hierarchy_and_roles ............................. PASS
+   - vulkan_context::test_vulkan_context_dmabuf_lifecycle .................. PASS
+   - wallpaper_sampler::test_wallpaper_tint_sampler_luminance .............. PASS
+   - pipeline::test_render_pipeline_with_client_buffer ..................... PASS
+   - pipeline::test_render_pipeline_7_layers ............................... PASS
+
+4. vitusos-native: 17 passed, 0 failed
+   - settings::* (12 tests) ................................................ PASS
+   - filer::test_filer_daemon_and_searchbar_unification .................... PASS
+   - package_manager::test_package_manager_dispatch ........................ PASS
+   - pathfinder::test_pathfinder_search_and_preview_and_install ............ PASS
+   - zen_browser::test_zen_browser_lifecycle_and_theming ................... PASS
+   - terminow::test_terminow_tab_management_and_execution .................. PASS
+
+5. animus-appkit: 16 passed, 0 failed ..................................... PASS
+6. animus-cache: 11 passed, 0 failed ...................................... PASS
+7. vitusos-installer: 7 passed, 0 failed .................................. PASS
+8. animus-hev: 6 passed, 0 failed ......................................... PASS
+9. animus-input: 5 passed, 0 failed ....................................... PASS
+10. animus-physics: 5 passed, 0 failed ..................................... PASS
+
+
+3. BUILD & HARNESS VERIFICATION
+--------------------------------------------------------------------------------
+3.1 UEFI Bootloader Pipeline:
+    - Command: ./scripts/build_uefi.sh
+    - Exit Code: 0
+    - Artifacts:
+      * target/esp/EFI/BOOT/BOOTX64.EFI (PE32+ executable, subsystem 10)
+      * target/esp.img (64MB FAT32 disk image)
+    - Result: PASS
+
+3.2 Early Splash Daemon (animus-early):
+    - Command: make -C bootloader/animus-early clean && make -C bootloader/animus-early
+    - Exit Code: 0
+    - Compiler: gcc -std=c11 -D_GNU_SOURCE
+    - Warnings: 0, Errors: 0
+    - Audio Integration: Dynamic WAV header parser (22,255 Hz, 2ch) + PipeWire
+    - Result: PASS
+
+3.3 QEMU KVM Execution Harness:
+    - Command: ./scripts/run_qemu.sh --dry-run
+    - Acceleration: KVM (/dev/kvm enabled)
+    - Audio Device: `-audiodev pipewire,id=snd0 -device intel-hda -device hda-duplex,audiodev=snd0`
+    - Exit Code: 0
+    - Result: PASS
+
+3.4 Full Boot Sequence & Desktop Simulation Runner:
+    - Command: cargo run --bin vitusos-simulation -- --headless --timeout 5
+    - Boot Chime: Dispatched `assets/sounds/boot_chime.wav` over PipeWire without distortion
+    - VM Launch: Executed QEMU with KVM acceleration, Split OVMF UEFI, and VirtIO scanout
+    - Boot Sequence: BdsDxe loaded and started AnimusBoot.efi successfully
+    - Exit Code: 0
+    - Result: PASS
+
+
+4. HARDWARE AUDIT VERIFICATION
+--------------------------------------------------------------------------------
+Probed Host Hardware:
+  - CPU: 13th Gen Intel Core i5-13420H (12 threads, VT-x supported)
+  - Display: Intel Raptor Lake-P UHD Graphics [8086:a7a8], connected to eDP-1 (1920x1080)
+  - Render: NVIDIA RTX 3050 6GB Laptop GPU (nvidia 595.84, modeset=Y)
+  - DRM Connector Status:
+    * /sys/class/drm/card1-eDP-1/status: "connected"
+    * /sys/class/drm/card2-HDMI-A-1/status: "disconnected"
+  - DRM Primary Device Resolution: Correctly maps to /dev/dri/card1
+  - Result: VERIFIED AND SUPPORTED (Hybrid PRIME)
+================================================================================

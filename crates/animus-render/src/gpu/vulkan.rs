@@ -26,11 +26,11 @@
 //! 12. `vkQueuePresentKHR` / DRM page flip trigger
 
 #[cfg(target_os = "linux")]
-use ash::{vk, Entry, Instance, Device};
+use ash::{vk, Entry, Device};
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 /// All SPIR-V shader modules loaded at compositor startup.
 pub struct ShaderModules {
@@ -114,19 +114,9 @@ pub fn compile_glsl_to_spirv(source: &str, name: &str, kind: ShaderKind) -> Resu
 
         Ok(result.as_binary().to_vec())
     }
-
-    #[cfg(not(target_os = "linux"))]
-    {
-        // On Windows (dev), return a minimal valid SPIR-V stub.
-        // The magic word 0x07230203 is the SPIR-V magic number.
-        let _ = (source, name, kind);
-        Ok(vec![0x07230203u32, 0x00010300, 0x00080007, 0x00000000, 0x00000000])
-    }
 }
 
 /// The real AnimusEngine Vulkan renderer.
-/// On Linux: calls real Vulkan API via `ash`.
-/// On Windows (dev): tracks initialization state without GPU calls.
 pub struct AnimusVulkanRenderer {
     pub is_initialized: bool,
     pub output_width: u32,
@@ -136,8 +126,6 @@ pub struct AnimusVulkanRenderer {
     pub shaders_loaded: bool,
     /// Compiled SPIR-V modules (populated after init)
     pub spirv_modules: Option<ShaderModules>,
-    // Linux-only Vulkan handles (managed by ash on Linux)
-    #[cfg(target_os = "linux")]
     _phantom: std::marker::PhantomData<()>,
 }
 
@@ -358,45 +346,22 @@ mod tests {
     fn test_vulkan_renderer_initialization() {
         let mut renderer = AnimusVulkanRenderer::new(1920, 1080);
         assert!(!renderer.is_initialized);
-        let result = renderer.initialize();
-        // On Linux without a GPU (WSL2), shader compilation may fail gracefully.
-        // On Windows, stubs are used. Either way, is_initialized is set true.
-        #[cfg(not(target_os = "linux"))]
-        {
-            let _ = result;
-            assert!(renderer.is_initialized);
-        }
-        #[cfg(target_os = "linux")]
-        {
-            // On Linux, initialization may fail if libvulkan is not available in WSL.
-            // The test passes if initialization was attempted without panic.
-            let _ = result;
-        }
+        let _ = renderer.initialize();
     }
 
     #[test]
     fn test_shader_dir_resolution() {
         let renderer = AnimusVulkanRenderer::new(1920, 1080);
-        // Should find shaders/ relative to workspace
         assert!(renderer.shader_dir.to_string_lossy().contains("shaders"));
     }
 
     #[test]
-    fn test_spirv_stub_on_non_linux() {
-        let result = compile_glsl_to_spirv("void main() {}", "test.vert", ShaderKind::Vertex);
-        #[cfg(not(target_os = "linux"))]
-        {
-            assert!(result.is_ok());
-            let spirv = result.unwrap();
-            assert!(!spirv.is_empty());
-            assert_eq!(spirv[0], 0x07230203u32);
-        }
-        #[cfg(target_os = "linux")]
-        {
-            // On Linux, shaderc compiles real GLSL. "void main() {}" is valid
-            // but may fail without proper #version directive. This test only
-            // verifies the function doesn't panic — the result may be Err.
-            let _ = result;
-        }
+    fn test_real_glsl_compilation() {
+        let glsl = "#version 450\nvoid main() {\n    gl_Position = vec4(0.0, 0.0, 0.0, 1.0);\n}\n";
+        let result = compile_glsl_to_spirv(glsl, "test.vert", ShaderKind::Vertex);
+        assert!(result.is_ok(), "Real GLSL compilation via shaderc must succeed");
+        let spirv = result.unwrap();
+        assert!(!spirv.is_empty());
+        assert_eq!(spirv[0], 0x07230203u32, "Must produce valid SPIR-V magic header");
     }
 }

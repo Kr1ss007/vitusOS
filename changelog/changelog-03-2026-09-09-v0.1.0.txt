@@ -1,0 +1,110 @@
+================================================================================
+VITUSOS CHANGELOG & DEPENDENCY AUDIT
+FILE: changelog/changelog-03-2026-09-09-v0.1.0.txt
+RELEASE ID: 03
+DATE: 2026-09-09
+VERSION: v0.1.0 (Target: Upstream Color Grand Payload ISO / KVM Virtual Machine)
+SCOPE: KVM Infrastructure, Zero-Flicker Boot Stack, GPU Hardening, Compositor Engine, Stub Purge
+AUTHOR: vitusOS Core Architecture Team & Antigravity
+================================================================================
+
+1. NEW FILES CREATED
+--------------------------------------------------------------------------------
+1.1 Linux Virtualization & Build Scripts:
+    * `scripts/setup_qemu_deps.sh` [NEW]:
+      - Automated dependency checker verifying /dev/kvm, qemu-system-x86_64, OVMF,
+        GNU-EFI, and filesystem creation utilities.
+    * `scripts/build_uefi.sh` [NEW]:
+      - Automated pipeline compiling AnimusBoot.efi and assembling FAT32 ESP disk image.
+    * `scripts/run_qemu.sh` [NEW]:
+      - Execution harness supporting KVM acceleration, headless/graphical modes,
+        timeout guards, ephemeral NVRAM templates, VirtIO devices, and host PipeWire
+        Intel-HDA audio integration (`-audiodev pipewire,id=snd0 -device intel-hda -device hda-duplex,audiodev=snd0`).
+    * `bootloader/animus-early/compile_flags.txt` [NEW]:
+      - Configures libdrm, pipewire, and spa include flags for clangd language server.
+
+1.2 Native Linux PAM Subsystem:
+    * `crates/animus-compositor/src/shell/pam.rs` [NEW]:
+      - Real FFI module linking directly against `/lib/x86_64-linux-gnu/libpam.so.0`.
+      - Full PAM conversation handler (`pam_start`, `pam_authenticate`, `pam_acct_mgmt`, `pam_end`).
+      - Completely replaces unmaintained `pam-sys` crate.
+
+1.3 Kernel & System Configuration (Layer 0):
+    * `distro/etc/grub/vitusos.cfg` [NEW]:
+      - GRUB configuration fragment with silent boot cmdline:
+        loglevel=0, quiet, splash, vt.global_cursor_default=0, vt.handoff=7, fbcon=map:99,
+        fbcon=nodefer, rd.udev.log_level=3, udev.log_level=3, systemd.show_status=0,
+        rd.systemd.show_status=0, systemd.log_level=err, logo.nologo, console=ttyS0,115200n8,
+        nvidia-drm.modeset=1, nvidia-drm.fbdev=1, i915.fastboot=1, i915.modeset=1, drm.debug=0.
+    * `distro/etc/sysctl.d/99-vitusos-silent.conf` [NEW]:
+      - Silent sysctl parameters: kernel.printk = 0 0 0 0, kernel.sysrq = 0, dev.drm.debug = 0,
+        vm.swappiness = 10, kernel.sched_rt_runtime_us = -1.
+    * `distro/etc/modprobe.d/vitusos-drm.conf` [NEW]:
+      - Driver modesetting parameters for NVIDIA proprietary driver (nvidia 595.84)
+        and Intel UHD i915 FastBoot for Raptor Lake-P.
+    * `distro/etc/modprobe.d/vitusos-blacklist.conf` [NEW]:
+      - Blacklists legacy framebuffers (vesafb, vga16fb, efifb, simplefb), nouveau,
+        and unused legacy sound drivers.
+
+1.4 Systemd Units & Security Services:
+    * `distro/systemd/vitusos-inhibit-getty.service` [NEW]:
+      - Inhibits virtual console gettys on tty1 and tty7 to prevent any text console login
+        prompt from ever displaying on the physical screen.
+
+
+2. MODIFIED & PURGED FILES
+--------------------------------------------------------------------------------
+2.1 Compositor Simulation Runner (crates/animus-compositor/src/simulation.rs):
+    * `crates/animus-compositor/src/simulation.rs` [MODIFIED]:
+      - Refactored from a console text printer to an authoritative KVM/QEMU and desktop visual runner.
+      - Dispatches `assets/sounds/boot_chime.wav` over PipeWire.
+      - Automatically builds missing UEFI ESP image via `scripts/build_uefi.sh`.
+      - Executes `scripts/run_qemu.sh` with KVM acceleration, Split OVMF UEFI firmware, and VirtIO graphics.
+      - Supports `--desktop`, `--headless`, `--timeout`, and `--bench-only` flags.
+
+2.2 Sound Engine & Chime Canonization (crates/animus-core/src/sound.rs):
+    * `crates/animus-core/src/sound.rs` [MODIFIED]:
+      - Enforces `assets/sounds/boot_chime.wav` as the sole canonical boot chime audio file.
+      - Purged all `.mp3` extension logic, fallbacks, and test assertions.
+      - Directs playback to PipeWire (`pw-play`), ALSA (`aplay`), and `/proc/asound`.
+
+2.3 Early Bootloader Subsystem (bootloader/animus-early):
+    * `bootloader/animus-early/animus-early.c` [MODIFIED]:
+      - Included `<linux/vt.h>`.
+      - Added `VT_DISALLOCATE` on tty1 and `VT_ACTIVATE` on tty7 in graphics mode.
+      - Dynamically parses WAV header (sample rate at offset 24 = 22,255 Hz, channels at offset 22 = 2).
+      - Added robust `#include <libdrm/drm.h>` fallbacks.
+
+2.4 Complete Purge of Mocks, Stubs, & Placeholders:
+    * `crates/vitusos-native/src/surface.rs` [MODIFIED]:
+      - Purged Windows/non-Linux stubs; connects directly to Wayland display socket.
+    * `crates/vitusos-native/src/package_manager.rs` [MODIFIED]:
+      - Purged simulated sleep fallbacks; executes real package managers (`apt-get`, `flatpak`, `snap`).
+    * `crates/vitusos-native/src/zen_browser.rs` [MODIFIED]:
+      - Purged Windows `cmd` mock; launches real `zen-browser` binary or Flatpak package.
+    * `crates/vitusos-installer/src/disk.rs` [MODIFIED]:
+      - Purged fake Samsung/Crucial mock disks; scans real `/sys/block` and `/proc/mounts`.
+    * `crates/vitusos-installer/src/engine.rs` [MODIFIED]:
+      - Purged `simulated_install()`; enforces real root EUID (`geteuid() == 0`) and physical devices.
+    * `crates/animus-compositor/src/shell/lock_screen.rs` & `login_manager.rs` [MODIFIED]:
+      - Purged authentication bypass backdoors; wired directly to native Linux `pam::authenticate_user()`.
+    * `crates/vitusos-native/src/terminow.rs` [MODIFIED]:
+      - Purged hardcoded fake command matches; streams live PTY stdout/stderr via non-blocking master fd.
+    * `distro/builder/Build-Iso.ps1` [DELETED]:
+      - Purged Windows PowerShell script; native Linux ISO builder is `distro/builder/build_iso.sh`.
+
+
+3. SYSTEM DEPENDENCIES INSTALLED
+--------------------------------------------------------------------------------
+    * `qemu-system-x86` (v10.2.1)
+    * `ovmf` / `ovmf-generic`
+    * `gnu-efi`
+    * `libpipewire-0.3-dev` / `libspa-0.2-dev`
+    * `libpam0g-dev`
+    * `libudev-dev`
+    * `libdrm-dev`
+    * `libgbm-dev`
+    * `libinput-dev`
+    * `libseat-dev`
+    * `mtools` / `dosfstools`
+================================================================================

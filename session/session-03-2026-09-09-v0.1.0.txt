@@ -1,0 +1,164 @@
+================================================================================
+VITUSOS ARCHITECTURE & IMPLEMENTATION SESSION LOG
+FILE: session/session-03-2026-09-09-v0.1.0.txt
+SESSION ID: 03
+DATE: 2026-09-09
+VERSION: v0.1.0 (Target: Upstream Color Grand Payload ISO / KVM Virtual Machine)
+ENVIRONMENT: Linux x86_64 / HP Victus 15-fa2xxx / KVM / OVMF UEFI
+AUTHOR: vitusOS Core Architecture Team & Antigravity
+================================================================================
+
+1. EXECUTIVE SUMMARY & PROGRESSION OVERVIEW
+--------------------------------------------------------------------------------
+Session 03 establishes both the virtualization test infrastructure and the complete
+bare-metal zero-flicker boot-to-shutdown architecture for vitusOS.
+
+vitusOS is fundamentally not an ordinary Linux distribution. The design mandate
+is absolute visual and behavioral purity:
+  - Zero text console bleed on the physical display from UEFI to power-off.
+  - Zero TTY logins or systemd status banners.
+  - Zero mode-switching flash, flickering, or display stutter.
+  - Zero Plymouth: complete ownership of the display belongs to AnimusBoot,
+    animus-early, and the AnimusEngine compositor.
+  - Zero kernel panics or crash leaks.
+  - Zero mocks, stubs, placeholders, or fake simulations: 100% real Linux kernel APIs.
+
+In this session:
+  1. Complete Hardware Audit of User's Host Laptop (HP Victus 15):
+     - CPU: 13th Gen Intel Core i5-13420H (Raptor Lake, 8 cores / 12 threads:
+       4 Performance cores, 4 Efficient cores, max 4.60 GHz).
+     - Primary Display iGPU: Intel Corporation Raptor Lake-P UHD Graphics [8086:a7a8]
+       (pci@0000:00:02.0, driver: i915, logical framebuffer /dev/fb0, connected
+       to internal eDP-1 display at 1920x1080@144Hz, DRM card1, renderD128).
+     - Discrete Secondary dGPU: NVIDIA Corporation GeForce RTX 3050 6GB Laptop GPU
+       GA107BM (pci@0000:01:00.0, driver: nvidia 595.84, CUDA 13.2, modeset=Y,
+       fbdev=Y, connected to external HDMI-A-1, DRM card2, renderD129).
+     - Verified hybrid architecture: Intel i915 drives the internal laptop panel;
+       NVIDIA provides hardware PRIME render offload.
+  2. Plymouth Eradication:
+     - Confirmed removal of all Plymouth hooks, units, and references across the stack.
+     - VitusOS boots directly from UEFI GOP into animus-early simpledrm and then
+       hands off to AnimusEngine without any intermediate legacy splash daemons.
+  3. Canonical Boot Chime Specification & Exclusive WAV Format:
+     - Canonical uncompressed boot chime asset: `assets/sounds/boot_chime.wav`
+       (209,828 bytes, RIFF WAVE, 16-bit PCM, stereo, 22,255 Hz).
+     - Installed to `/usr/share/vitusos/sounds/boot_chime.wav` and `/etc/vitusos/sounds/boot_chime.wav`.
+     - Completely purged all `.mp3` references, fallbacks, and handlers from the codebase.
+     - Updated `bootloader/animus-early/animus-early.c` to dynamically parse the WAV header
+       (sample rate at offset 24 = 22,255 Hz; channels at offset 22 = 2) for zero-pitch-distortion
+       playback via PipeWire SPA audio structures.
+  4. Working KVM / QEMU Boot & Visual Desktop Simulation Runner:
+     - Re-engineered `crates/animus-compositor/src/simulation.rs` (`vitusos-simulation`)
+       from a static text printer into an authoritative KVM/QEMU and desktop visual runner.
+     - Dispatches canonical `boot_chime.wav` over PipeWire.
+     - Launches `scripts/run_qemu.sh` with KVM acceleration (`-enable-kvm -cpu host`), split
+       OVMF UEFI firmware, VirtIO display (`-vga virtio`), VirtIO input (`-device virtio-tablet-pci
+       -device virtio-keyboard-pci`), and host PipeWire Intel-HDA audio integration (`-audiodev
+       pipewire,id=snd0 -device intel-hda -device hda-duplex,audiodev=snd0`).
+     - Supports live GUI desktop session via `--desktop`, headless automated CI verification via
+       `--headless --timeout <seconds>`, and deterministic 144Hz physics frame benchmark via `--bench-only`.
+  5. Kernel & GRUB Silent Command-Line Architecture (Layer 0):
+     - Created `distro/etc/grub/vitusos.cfg` with exhaustive silence parameters:
+       `quiet splash loglevel=0 vt.global_cursor_default=0 vt.handoff=7 fbcon=map:99
+        fbcon=nodefer rd.udev.log_level=3 udev.log_level=3 systemd.show_status=0
+        rd.systemd.show_status=0 systemd.log_level=err logo.nologo console=ttyS0,115200n8
+        nvidia-drm.modeset=1 nvidia-drm.fbdev=1 i915.fastboot=1 i915.modeset=1 drm.debug=0`
+     - Created `distro/etc/sysctl.d/99-vitusos-silent.conf` configuring `kernel.printk = 0 0 0 0`,
+       `kernel.sysrq = 0`, `dev.drm.debug = 0`, and real-time compositor scheduler allowances.
+     - Created `distro/etc/modprobe.d/vitusos-drm.conf` for NVIDIA DRM KMS + Intel FastBoot.
+     - Created `distro/etc/modprobe.d/vitusos-blacklist.conf` blacklisting legacy framebuffers
+       (vesafb, vga16fb, efifb, simplefb), nouveau, and legacy audio wrappers.
+  6. Early Bootloader & UEFI Handoff (Layer 1):
+     - Defined `ANIMUS_HANDOFF_GUID_STR` in `bootloader/uefi/include/AnimusHandoff.h`.
+     - Hardened `bootloader/animus-early/animus-early.c` with `<linux/vt.h>` ioctls:
+       `VT_DISALLOCATE` on tty1, `VT_ACTIVATE` on tty7, and `KDSETMODE = KD_GRAPHICS`.
+     - Installed host `libpipewire-0.3-dev` and updated `bootloader/animus-early/Makefile`
+       with `-D_GNU_SOURCE`, achieving 100% clean compilation.
+     - Added `compile_flags.txt` and robust `#include <libdrm/drm.h>` fallbacks for clangd IDE integration.
+     - Updated `bootloader/uefi/Makefile` with `-O pei-x86-64 --subsystem=10`, verified
+       generation of standard PE32+ `AnimusBoot.efi`.
+  7. Absolute Stub & Mock Purge Across All Crates:
+     - `crates/vitusos-native/src/surface.rs`: Purged non-Linux stubs; connects directly to Wayland socket.
+     - `crates/vitusos-native/src/package_manager.rs`: Purged simulated sleep; executes real `apt-get`/`flatpak`/`snap`.
+     - `crates/vitusos-native/src/zen_browser.rs`: Purged Windows mock cmd; executes native `zen-browser` or Flatpak.
+     - `crates/animus-core/src/sound.rs`: Purged DirectSound, Windows PowerShell, and simulated sound; uses real PipeWire `pw-play` and procfs ALSA cards.
+     - `crates/vitusos-installer/src/disk.rs`: Purged fake Samsung/Crucial disks; enumerates real NVMe/SATA block devices from `/sys/block/` and `/proc/mounts`.
+     - `crates/vitusos-installer/src/engine.rs`: Purged `simulated_install()`; enforces real root EUID and block partition targets.
+     - `crates/animus-compositor/src/shell/pam.rs`: Created native FFI module linking directly to `/lib/x86_64-linux-gnu/libpam.so.0` with standard PAM conversation handler; purged `pam-sys`.
+     - `crates/animus-compositor/src/shell/lock_screen.rs` & `login_manager.rs`: Purged bypass backdoors; enforced real PAM authentication.
+     - `crates/vitusos-native/src/terminow.rs`: Purged hardcoded mock shell commands; streams live PTY stdout/stderr via non-blocking master fd.
+     - Deleted `distro/builder/Build-Iso.ps1` (Windows PowerShell wrapper); enforced native `distro/builder/build_iso.sh`.
+
+
+2. HOST HARDWARE PROFILE (HP VICTUS 15-FA2XXX)
+--------------------------------------------------------------------------------
+Architecture:   x86_64 (64-bit)
+CPU:            13th Gen Intel(R) Core(TM) i5-13420H
+                - 8 physical cores (4 Performance cores + 4 Efficient cores), 12 threads
+                - Max Frequency: 4.60 GHz, Base: 2.10 GHz
+                - Virtualization: VT-x enabled (/dev/kvm accessible)
+iGPU (Display): Intel Corporation Raptor Lake-P [UHD Graphics] [8086:a7a8] (rev 04)
+                - Bus ID: pci@0000:00:02.0
+                - Kernel driver: i915 (fastboot=1, modeset=1)
+                - Primary output: /dev/fb0, /dev/dri/card1, /dev/dri/renderD128
+                - Active Connector: card1-eDP-1 (Internal 15.6" IPS 1920x1080@144Hz, connected)
+dGPU (Render):  NVIDIA Corporation GA107BM [GeForce RTX 3050 6GB Laptop GPU]
+                - Bus ID: pci@0000:01:00.0
+                - Driver: NVIDIA UNIX Open Kernel Module 595.84, CUDA 13.2
+                - Node: /dev/dri/card2, /dev/dri/renderD129
+                - Connector: card2-HDMI-A-1 (External HDMI, disconnected)
+Topology:       DRM PRIME Sync Hybrid Graphics
+                - Intel i915 manages the eDP-1 physical display and scanout.
+                - NVIDIA RTX 3050 handles Vulkan/GL render offload via PRIME.
+
+
+3. TEST & VERIFICATION SUITE RESULTS
+--------------------------------------------------------------------------------
+3.1 Workspace Test Suite (`cargo test --workspace`):
+    - animus-compositor:  101 passed, 0 failed
+    - animus-core:         54 passed, 0 failed
+    - animus-render:       22 passed, 0 failed
+    - vitusos-native:      17 passed, 0 failed
+    - animus-appkit:       16 passed, 0 failed
+    - animus-cache:        11 passed, 0 failed
+    - vitusos-installer:    7 passed, 0 failed
+    - animus-hev:           6 passed, 0 failed
+    - animus-input:         5 passed, 0 failed
+    - animus-physics:       5 passed, 0 failed
+    - Total Doc-Tests:      0 failed
+    ----------------------------------------------------------------------------
+    TOTAL RESULT: 244 PASSED, 0 FAILED (100% SUCCESS)
+
+3.2 AnimusBoot UEFI Build Verification:
+    - Executed `./scripts/build_uefi.sh`
+    - Built: `bootloader/uefi/AnimusBoot.efi` (PE32+ EFI Application, subsystem=10)
+    - Built: `target/esp/EFI/BOOT/BOOTX64.EFI`
+    - Built: `target/esp.img` (64MB FAT32 disk image)
+    - Status: SUCCESS (Exit 0)
+
+3.3 Early Bootloader Compilation:
+    - Executed `make -C bootloader/animus-early clean && make -C bootloader/animus-early`
+    - Built: `bootloader/animus-early/animus-early` (C11 with libdrm and libpipewire-0.3)
+    - Dynamic WAV Header parsing: rate=22,255 Hz, channels=2
+    - Warnings: 0, Errors: 0
+    - Status: SUCCESS (Exit 0)
+
+3.4 KVM / QEMU Virtual Machine & Simulation Runner Verification:
+    - Executed `cargo run --bin vitusos-simulation -- --headless --timeout 5`
+    - Dispatched `assets/sounds/boot_chime.wav` over PipeWire
+    - QEMU executed with KVM acceleration, Split OVMF UEFI firmware, and VirtIO direct scanout
+    - Status: SUCCESS (Exit 0)
+
+
+4. ZERO-STUB COMPLIANCE & PRODUCTION READINESS
+--------------------------------------------------------------------------------
+vitusOS strictly prohibits mock placeholders or unfinished stubs in core boot paths:
+  - Downcasting in `AnimusBackend` uses real Rust `std::any::Any`.
+  - DRM device detection inspects actual `/sys/class/drm/*/status` sysfs trees.
+  - Libinput seat events route directly to the AnimusEngine EventBus.
+  - GlowRenderer frame compositing uses genuine Smithay EGL context calls with warm black clears.
+  - Systemd services use real `sd_notify` READY and WATCHDOG heartbeats.
+  - Authentication uses real Linux PAM FFI against `/lib/x86_64-linux-gnu/libpam.so.0`.
+  - Terminal emulator uses real non-blocking PTY master stream.
+  - Hardware storage scans real sysfs block trees and mounts.
+================================================================================

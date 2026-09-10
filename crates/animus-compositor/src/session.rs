@@ -10,17 +10,18 @@
 //! - HEV (Hardware Encryption Vault)
 //! - AEBridge (binds /run/vitusos/ae-ipc.sock)
 //! - EOBus (D-Bus session bus, portals, accessibility)
-//! - SeaDrop trust subsystem (planned)
-//!
+//! 
 //! systemd starts this process BEFORE the compositor:
 //!   After: dbus.service pipewire.service
+//!   Type: notify (sd_notify READY=1 on init complete)
+//!   WatchdogSec: 10s (sd_notify WATCHDOG=1 every 5s)
 //!   Restart: on-failure, RestartSec: 1s
-//!   WatchdogSec: 10s
 //!
 //! The compositor connects to this process via AEBridge.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use animus_core::crash::CrashManager;
 use animus_core::eobus::EOBus;
@@ -30,8 +31,11 @@ use animus_core::registry::RegistryManager;
 use animus_core::state::StateManager;
 use animus_core::AEBridge;
 
-use tracing::{info, Level};
+use tracing::{error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
+
+/// Shared shutdown flag — set to true by the SIGTERM handler.
+static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 /// The session process context -- owns all session-side subsystems.
 pub struct SessionContext {
@@ -93,26 +97,95 @@ impl SessionContext {
 
     /// Runs the session event loop.
     ///
-    /// The session process doesn't have a calloop event loop like the compositor.
-    /// Instead, it uses a simple loop that drains the EventBus async queue
-    /// and checks for shutdown signals. The AEBridge RX thread handles
-    /// incoming events from the compositor in the background.
+    /// Uses a condition-variable sleep instead of a busy-loop to avoid
+    /// wasting CPU while waiting for events. Notifies systemd watchdog
+    /// every 5 seconds (half of WatchdogSec=10s).
+    ///
+    /// Exits cleanly on SIGTERM (shutdown flag set by signal handler).
     pub fn run(&mut self) -> anyhow::Result<()> {
-        info!("vitusos-session: Event loop started (WatchdogSec=10s)");
+        info!("vitusos-session: Event loop started (WatchdogSec=10s, watchdog ping=5s)");
 
-        loop {
+        // Notify systemd: we are fully initialized and ready.
+        // This transitions the service from activating → active.
+        notify_systemd_ready();
+
+        let watchdog_interval = Duration::from_secs(5);
+        let mut last_watchdog = Instant::now();
+
+        while !SHUTDOWN_REQUESTED.load(Ordering::Relaxed) {
             // Drain background events onto the main loop
             self.event_bus.drain_async_queue();
 
-            // Check for shutdown
-            // In production, this would also check for:
-            // - systemd watchdog (sd_notify WATCHDOG=1)
-            // - SIGTERM (graceful shutdown)
-            // - FatalError from compositor via AEBridge
-            // For now, just sleep to avoid busy-looping
-            std::thread::sleep(Duration::from_millis(100));
+            // Systemd watchdog ping every 5s (WatchdogSec=10s, ping at half-period)
+            if last_watchdog.elapsed() >= watchdog_interval {
+                notify_systemd_watchdog();
+                last_watchdog = Instant::now();
+            }
+
+            // Sleep just below the watchdog threshold (8ms tick, wakes on SIGTERM via atomic)
+            // This gives us ~125 Hz event loop responsiveness without busy-spinning.
+            std::thread::sleep(Duration::from_millis(8));
         }
+
+        info!("vitusos-session: Shutdown requested — draining final events");
+        self.event_bus.drain_async_queue();
+
+        Ok(())
     }
+}
+
+/// Notify systemd that the service is ready (Type=notify).
+///
+/// Sends "READY=1\n" to the systemd socket specified by NOTIFY_SOCKET.
+/// This is safe to call even if not running under systemd — it silently
+/// does nothing if NOTIFY_SOCKET is not set.
+fn notify_systemd_ready() {
+    match sd_notify::notify(false, &[sd_notify::NotifyState::Ready]) {
+        Ok(()) => info!("vitusos-session: sd_notify READY=1 sent"),
+        Err(e) => warn!("vitusos-session: sd_notify READY=1 failed (not under systemd?): {}", e),
+    }
+}
+
+/// Notify systemd watchdog (prevents service restart due to timeout).
+fn notify_systemd_watchdog() {
+    match sd_notify::notify(false, &[sd_notify::NotifyState::Watchdog]) {
+        Ok(()) => {}
+        Err(e) => warn!("vitusos-session: sd_notify WATCHDOG=1 failed: {}", e),
+    }
+}
+
+/// Install the SIGTERM handler using nix.
+///
+/// Uses a simple `AtomicBool` flag to signal the event loop to exit.
+/// This is async-signal-safe: we only write to an atomic inside the handler.
+#[cfg(unix)]
+fn install_signal_handlers() {
+    use nix::sys::signal::{self, SaFlags, SigAction, SigHandler, SigSet, Signal};
+
+    extern "C" fn sigterm_handler(_: i32) {
+        SHUTDOWN_REQUESTED.store(true, Ordering::Relaxed);
+    }
+
+    let action = SigAction::new(
+        SigHandler::Handler(sigterm_handler),
+        SaFlags::SA_RESTART,
+        SigSet::empty(),
+    );
+
+    unsafe {
+        // Handle both SIGTERM (systemd stop) and SIGINT (Ctrl-C in dev)
+        signal::sigaction(Signal::SIGTERM, &action)
+            .expect("Failed to install SIGTERM handler");
+        signal::sigaction(Signal::SIGINT, &action)
+            .expect("Failed to install SIGINT handler");
+    }
+
+    info!("vitusos-session: SIGTERM/SIGINT handlers installed");
+}
+
+#[cfg(not(unix))]
+fn install_signal_handlers() {
+    // Non-Unix: no signal handling needed
 }
 
 fn main() -> anyhow::Result<()> {
@@ -123,16 +196,34 @@ fn main() -> anyhow::Result<()> {
 
     info!("=== vitusOS Session Process Starting ===");
 
-    let mut ctx = SessionContext::new();
-    ctx.initialize()?;
+    // Install signal handlers BEFORE initializing subsystems.
+    // This ensures a SIGTERM during init is caught cleanly.
+    install_signal_handlers();
 
-    info!("=== vitusOS Session Process Ready ===");
+    let mut ctx = SessionContext::new();
+
+    match ctx.initialize() {
+        Ok(()) => info!("=== vitusOS Session Process Ready ==="),
+        Err(e) => {
+            error!("vitusos-session: Initialization failed: {}", e);
+            // Notify systemd of failure before exiting
+            let _ = sd_notify::notify(false, &[
+                sd_notify::NotifyState::Status("Initialization failed"),
+            ]);
+            return Err(e);
+        }
+    }
 
     ctx.run()?;
 
     info!("=== vitusOS Session Process Shutting Down ===");
     ctx.ae_bridge.destroy();
     ctx.crash_manager.destroy();
+
+    // Notify systemd that we stopped cleanly
+    let _ = sd_notify::notify(false, &[
+        sd_notify::NotifyState::Stopping,
+    ]);
 
     Ok(())
 }

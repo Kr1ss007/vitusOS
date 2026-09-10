@@ -44,6 +44,15 @@ pub struct CompositorState {
     #[cfg(target_os = "linux")]
     pub socket: Option<wayland_server::ListeningSocket>,
 
+    /// Persistent Smithay state — initialized once and kept alive for the
+    /// entire compositor lifetime. Wayland client state (surfaces, buffers,
+    /// roles) is stored here and must survive across frames.
+    ///
+    /// Previously this was created fresh on every dispatch call, causing
+    /// all client state to be lost every frame — a fatal session crash bug.
+    #[cfg(target_os = "linux")]
+    pub smithay_state: Option<SmithayState>,
+
     pub is_running: bool,
     pub start_time: std::time::Instant,
 }
@@ -60,9 +69,9 @@ impl CompositorState {
 
         let render_pipeline = RenderPipeline::new(width, height);
 
-        // On Linux, create the real Wayland display and bind a socket
+        // On Linux, create the real Wayland display, persistent state, and bind a socket
         #[cfg(target_os = "linux")]
-        let (display, socket) = Self::init_wayland_display();
+        let (display, smithay_state, socket) = Self::init_wayland_display();
 
         Self {
             backend,
@@ -75,6 +84,8 @@ impl CompositorState {
             sounds: SoundManager::new(),
             #[cfg(target_os = "linux")]
             display,
+            #[cfg(target_os = "linux")]
+            smithay_state,
             #[cfg(target_os = "linux")]
             socket,
             is_running: true,
@@ -89,21 +100,23 @@ impl CompositorState {
     #[cfg(target_os = "linux")]
     fn init_wayland_display() -> (
         Option<wayland_server::Display<SmithayState>>,
+        Option<SmithayState>,
         Option<wayland_server::ListeningSocket>,
     ) {
         use wayland_server::ListeningSocket;
-        use crate::smithay::state::ClientState;
 
         let mut display = match wayland_server::Display::new() {
             Ok(d) => d,
             Err(e) => {
                 tracing::error!("AnimusEngine: Failed to create Wayland display: {}", e);
-                return (None, None);
+                return (None, None, None);
             }
         };
 
-        // Initialize Smithay protocol globals on this display
-        let _smithay_state = SmithayState::new(&mut display);
+        // Initialize Smithay protocol globals and store SmithayState persistently.
+        // This must live for the entire compositor lifetime -- it owns the
+        // Wayland compositor/xdg_shell/seat global objects.
+        let smithay_state = SmithayState::new(&mut display);
 
         // Bind the Wayland socket
         let socket = ListeningSocket::bind_auto("wayland-vitusos", 0..10)
@@ -113,25 +126,25 @@ impl CompositorState {
             let socket_name = sock.socket_name().map(|n| n.to_string_lossy().to_string());
             if let Some(ref name) = socket_name {
                 info!("AnimusEngine: Wayland display socket bound at {}", name);
+                // Set WAYLAND_DISPLAY so child processes and native apps find us
                 std::env::set_var("WAYLAND_DISPLAY", name);
             }
         } else {
             tracing::warn!("AnimusEngine: Failed to bind Wayland socket, running without client support");
         }
 
-        (Some(display), socket)
+        (Some(display), Some(smithay_state), socket)
     }
 
     /// Dispatches pending Wayland client messages (without accepting new connections).
     /// Called when the socket is owned by the calloop event source.
+    /// Uses the persistent `smithay_state` field — client state survives across frames.
     #[cfg(target_os = "linux")]
     pub fn dispatch_wayland_clients_only(&mut self) {
-        if let Some(ref mut display) = self.display {
-            let mut state = match wayland_server::Display::new() {
-                Ok(mut d) => SmithayState::new(&mut d),
-                Err(_) => return,
-            };
-            match display.dispatch_clients(&mut state) {
+        if let (Some(ref mut display), Some(ref mut state)) =
+            (&mut self.display, &mut self.smithay_state)
+        {
+            match display.dispatch_clients(state) {
                 Ok(n) => {
                     if n > 0 {
                         tracing::trace!("AnimusEngine: Dispatched {} Wayland client events", n);
@@ -145,14 +158,15 @@ impl CompositorState {
         }
     }
 
-    /// Dispatches pending Wayland client messages.
+    /// Dispatches pending Wayland client messages and accepts new connections.
     /// Called from the calloop event loop each frame.
+    /// Uses the persistent `smithay_state` — Wayland client lifetime is preserved.
     #[cfg(target_os = "linux")]
     pub fn dispatch_wayland(&mut self) {
         use std::sync::Arc;
         use crate::smithay::state::ClientState;
 
-        // Accept new client connections
+        // Accept new client connections from the listening socket
         if let Some(ref socket) = self.socket {
             while let Ok(Some(stream)) = socket.accept() {
                 if let Some(ref mut display) = self.display {
@@ -167,17 +181,12 @@ impl CompositorState {
             }
         }
 
-        // Dispatch pending client requests
-        if let Some(ref mut display) = self.display {
-            // TODO: Store the SmithayState persistently and dispatch against it.
-            // For now we create a fresh state each dispatch — this is not ideal
-            // but allows client messages to be processed without panicking.
-            // The full implementation will own the SmithayState as a field.
-            let mut state = match wayland_server::Display::new() {
-                Ok(mut d) => SmithayState::new(&mut d),
-                Err(_) => return,
-            };
-            match display.dispatch_clients(&mut state) {
+        // Dispatch against the persistent SmithayState so all Wayland objects
+        // (wl_surface, wl_buffer, xdg_toplevel, etc.) persist across frames.
+        if let (Some(ref mut display), Some(ref mut state)) =
+            (&mut self.display, &mut self.smithay_state)
+        {
+            match display.dispatch_clients(state) {
                 Ok(n) => {
                     if n > 0 {
                         tracing::trace!("AnimusEngine: Dispatched {} Wayland client events", n);

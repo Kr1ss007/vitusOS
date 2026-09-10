@@ -138,7 +138,7 @@ impl TextRenderer {
         Self { loaded }
     }
 
-    fn face_for(&self, family: FontFamily) -> Option<&rustybuzz::Face> {
+    fn face_for(&self, family: FontFamily) -> Option<&rustybuzz::Face<'_>> {
         self.loaded.iter().find(|l| l.family == family).map(|l| &l.face)
     }
 
@@ -370,7 +370,7 @@ mod tests {
     #[test]
     fn text_renderer_initializes() {
         let tr = TextRenderer::new();
-        assert!(tr.font_count() >= 0);
+        let _ = tr.font_count();
     }
 
     #[test]

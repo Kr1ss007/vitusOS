@@ -9,7 +9,6 @@
 //! handler needs must already exist in static memory before backend start.
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::time::Instant;
 
 /// Magic number for crash dump format validation: "VTOS" = 0x56544F53.
 pub const CRASHDUMP_MAGIC: u32 = 0x56544F53;
@@ -133,6 +132,7 @@ static INITIALIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 
 impl CrashStateBlock {
     /// Returns the global instance. Must call initialize() first.
+    #[allow(static_mut_refs)]
     pub fn global() -> &'static mut CrashStateBlock {
         unsafe {
             G_CRASH_STATE.as_mut().expect("CrashStateBlock not initialized")

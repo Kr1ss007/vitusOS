@@ -5,7 +5,6 @@
 //! Dock auto-hide: checks anyWindowOverlapsDockArea() each frame.
 
 use crate::window::AEWindow;
-use std::collections::HashMap;
 
 /// Window snap zones for edge snapping (macOS-style window tiling).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -349,7 +348,7 @@ mod tests {
     fn raise_and_lower() {
         let mut wm = make_wm();
         let h1 = wm.create_window("A", "a", 0.0, 0.0, 400.0, 300.0);
-        let h2 = wm.create_window("B", "b", 0.0, 0.0, 400.0, 300.0);
+        let _h2 = wm.create_window("B", "b", 0.0, 0.0, 400.0, 300.0);
         let h3 = wm.create_window("C", "c", 0.0, 0.0, 400.0, 300.0);
 
         // Z-order: [A, B, C] (C on top)
@@ -368,7 +367,7 @@ mod tests {
     fn focus_moves_to_top_z() {
         let mut wm = make_wm();
         let h1 = wm.create_window("A", "a", 0.0, 0.0, 400.0, 300.0);
-        let h2 = wm.create_window("B", "b", 0.0, 0.0, 400.0, 300.0);
+        let _h2 = wm.create_window("B", "b", 0.0, 0.0, 400.0, 300.0);
 
         // Focus h1 — should move to top of z-order
         wm.focus(h1);

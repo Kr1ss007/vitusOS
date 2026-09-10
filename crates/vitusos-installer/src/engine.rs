@@ -8,9 +8,6 @@
 //!   5. AnimusEngine compositor + native apps
 //!   6. HEV vault initialization with Argon2id
 //!   7. UEFI boot entry registration via efibootmgr
-//!
-//! On non-Linux or when /sys/block is absent, falls back to simulated mode
-//! for development/testing without touching real hardware.
 
 use crate::types::InstallTelemetry;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -67,8 +64,7 @@ impl InstallEngine {
     }
 
     /// Spawns the asynchronous installation workflow sending real-time telemetry updates.
-    /// On real Linux bare metal: executes actual partitioning, formatting, and installation.
-    /// In WSL2/dev: simulates with realistic timing.
+    /// Executes actual partitioning, formatting, and installation on the target block device.
     pub fn start_install(
         &self,
         tx: mpsc::UnboundedSender<InstallTelemetry>,
@@ -87,35 +83,43 @@ impl InstallEngine {
         tokio::spawn(async move {
             info!("InstallEngine: Beginning vitusOS installation to {}", disk);
 
-            // Check if we can do real operations (root + block device access)
-            let can_do_real = Self::can_access_block_device(&disk);
-
-            if can_do_real {
-                Self::real_install(tx, &disk, &layout, &username, &password, running_flag).await;
-            } else {
-                Self::simulated_install(tx, running_flag).await;
+            // Verify device exists
+            if !std::path::Path::new(&disk).exists() {
+                let err_msg = format!("Target block device '{}' does not exist.", disk);
+                tracing::error!("InstallEngine: {}", err_msg);
+                let _ = tx.send(InstallTelemetry {
+                    phase: "Installation Failed".to_string(),
+                    percent: 0.0,
+                    speed_mb_s: 0.0,
+                    current_asset: disk.clone(),
+                    is_finished: true,
+                    error_msg: Some(err_msg),
+                });
+                running_flag.store(false, Ordering::SeqCst);
+                return;
             }
+
+            // Verify root privileges for bare metal partitioning
+            if unsafe { libc::geteuid() } != 0 {
+                let err_msg = "Root privileges required to partition and install vitusOS to bare metal.".to_string();
+                tracing::error!("InstallEngine: {}", err_msg);
+                let _ = tx.send(InstallTelemetry {
+                    phase: "Installation Failed".to_string(),
+                    percent: 0.0,
+                    speed_mb_s: 0.0,
+                    current_asset: disk.clone(),
+                    is_finished: true,
+                    error_msg: Some(err_msg),
+                });
+                running_flag.store(false, Ordering::SeqCst);
+                return;
+            }
+
+            Self::real_install(tx, &disk, &layout, &username, &password, running_flag).await;
         });
     }
 
-    /// Check if we have real access to the block device.
-    fn can_access_block_device(disk_path: &str) -> bool {
-        #[cfg(target_os = "linux")]
-        {
-            // Must be root and device must exist
-            if std::path::Path::new(disk_path).exists() {
-                return unsafe { libc::geteuid() } == 0;
-            }
-            false
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            false
-        }
-    }
-
     /// Real installation on bare metal.
-    #[cfg(target_os = "linux")]
     async fn real_install(
         tx: mpsc::UnboundedSender<InstallTelemetry>,
         disk: &str,
@@ -352,59 +356,5 @@ impl InstallEngine {
 
         running_flag.store(false, Ordering::SeqCst);
         info!("InstallEngine: Real installation finished on {}", disk);
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    async fn real_install(
-        _tx: mpsc::UnboundedSender<InstallTelemetry>,
-        _disk: &str,
-        _layout: &PartitionLayout,
-        _username: &str,
-        _password: &str,
-        running_flag: Arc<AtomicBool>,
-    ) {
-        running_flag.store(false, Ordering::SeqCst);
-    }
-
-    /// Simulated installation for dev/testing environments.
-    async fn simulated_install(
-        tx: mpsc::UnboundedSender<InstallTelemetry>,
-        running_flag: Arc<AtomicBool>,
-    ) {
-        info!("InstallEngine: Running in simulated mode (no block device access).");
-
-        let stages = [
-            ("Partitioning NVMe/SATA storage table (GPT + EFI System)...", 10.0, 150.0, "mkfs.vfat /dev/nvme0n1p1"),
-            ("Formatting root partition with Btrfs transparent zstd compression...", 25.0, 320.0, "mkfs.btrfs -L vitusos /dev/nvme0n1p2"),
-            ("Deploying Ubuntu noble base system & Linux HWE kernel...", 45.0, 580.0, "vmlinuz-6.8.0-generic"),
-            ("Extracting Grand Payload: NVIDIA 550, Mesa 24, Codecs, & Fonts...", 70.0, 720.0, "nvidia-driver-550.deb"),
-            ("Installing AnimusEngine compositor, AESurfaces, & Native Apps...", 88.0, 850.0, "animus-compositor"),
-            ("Configuring Hardware Encryption Vault (HEV) & TPM 2.0 PCR sealing...", 95.0, 420.0, "argon2id_kdf_seal"),
-            ("Installing AnimusBoot.efi & registering UEFI Boot Entry...", 100.0, 200.0, "BOOTX64.EFI"),
-        ];
-
-        for (phase, percent, speed, asset) in stages {
-            let _ = tx.send(InstallTelemetry {
-                phase: phase.to_string(),
-                percent,
-                speed_mb_s: speed,
-                current_asset: asset.to_string(),
-                is_finished: false,
-                error_msg: None,
-            });
-            tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
-        }
-
-        let _ = tx.send(InstallTelemetry {
-            phase: "Installation Complete!".to_string(),
-            percent: 100.0,
-            speed_mb_s: 0.0,
-            current_asset: "Ready".to_string(),
-            is_finished: true,
-            error_msg: None,
-        });
-
-        running_flag.store(false, Ordering::SeqCst);
-        info!("InstallEngine: Simulated installation finished.");
     }
 }

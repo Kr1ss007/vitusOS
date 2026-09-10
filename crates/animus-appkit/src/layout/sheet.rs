@@ -39,7 +39,7 @@ impl AESheet {
         title: impl Into<String>,
         on_dismiss: impl FnMut() + Send + 'static,
     ) -> Self {
-        let target_y = parent_y + (parent_h - height) * 0.5;
+        let _target_y = parent_y + (parent_h - height) * 0.5;
         let start_y = parent_y + Self::ATTACH_OFFSET_Y;
         Self {
             parent_x,

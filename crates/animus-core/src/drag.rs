@@ -85,7 +85,7 @@ impl DragManager {
         *self.cursor_x.write() = payload.origin_x;
         *self.cursor_y.write() = payload.origin_y;
         self.ghost_pos.write().snap(payload.origin_x, payload.origin_y);
-        let event_payload = AEEvent_to_drag_payload(&payload);
+        let event_payload = aeevent_to_drag_payload(&payload);
         let origin_x = payload.origin_x;
         let origin_y = payload.origin_y;
         *self.payload.write() = Some(payload);
@@ -163,7 +163,7 @@ impl DragManager {
 }
 
 /// Helper: convert DragPayload to AEEvent::DragStart payload
-fn AEEvent_to_drag_payload(payload: &DragPayload) -> crate::events::DragPayload {
+fn aeevent_to_drag_payload(payload: &DragPayload) -> crate::events::DragPayload {
     use crate::events::{DragPayload as EventPayload, DragPayloadType as EventType};
     let pt = match payload.payload_type {
         DragPayloadType::File => EventType::File,
@@ -201,7 +201,7 @@ mod tests {
         assert!(dm.is_dragging());
 
         dm.on_cursor_move(150.0, 250.0);
-        let (gx, gy) = dm.ghost_position();
+        let (gx, _gy) = dm.ghost_position();
         assert!((gx - 100.0).abs() < 1.0); // ghost starts at origin
 
         // Tick ghost spring
@@ -232,7 +232,7 @@ mod tests {
         assert!(!dm.is_dragging());
 
         // Ghost target should be back at origin
-        let (gx, gy) = dm.ghost_position();
+        let (_gx, _gy) = dm.ghost_position();
         dm.update(0.016);
         // Ghost should be moving toward origin (50, 50)
     }

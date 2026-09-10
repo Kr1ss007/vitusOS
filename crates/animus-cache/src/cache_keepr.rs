@@ -17,7 +17,7 @@ use crate::glyph_cache::GlyphCache;
 use crate::icon::IconCache;
 use crate::shader_cache::ShaderCache;
 use crate::snapshot_cache::SnapshotCache;
-use crate::tint_cache::{TintCache, TintResult};
+use crate::tint_cache::TintCache;
 use crate::app_index::AppIndexCache;
 
 /// Pressure levels from CrashManager (Part 21.4).
@@ -128,7 +128,7 @@ impl CacheKeepr {
     /// Store path changed -- invalidate affected caches (Part 26.3).
     pub fn on_store_path_changed(&self, component: &str, new_path: &str) {
         match component {
-            "animus-engine" | "animus-engine" => {
+            "animus-engine" => {
                 self.shaders.update_store_path(new_path);
                 self.glyphs.evict_all();
                 warn!("CacheKeepr: Store path changed for {} -- invalidated shaders + glyphs", component);
@@ -200,7 +200,8 @@ mod tests {
         ck.snapshots.put(1, 800, 600);
 
         // Low pressure: evicts tints + snapshots
-        let stats = ck.on_pressure_changed(PressureLevel::Low);
+        use crate::tint_cache::TintResult;
+        let _stats = ck.on_pressure_changed(PressureLevel::Low);
         assert_eq!(ck.tints.entry_count(), 0);
         assert_eq!(ck.snapshots.count(), 0);
     }

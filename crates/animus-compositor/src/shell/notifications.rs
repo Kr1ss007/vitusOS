@@ -30,6 +30,7 @@ const NOTIFICATION_HEIGHT: f32 = 80.0;
 const MARGIN_RIGHT: f32 = 16.0;
 const MARGIN_TOP: f32 = 44.0;   // below Panel (28px) + 16px gap
 const STACK_GAP: f32 = 8.0;
+#[allow(dead_code)]
 const CORNER_RADIUS: f32 = 12.0;
 const MAX_TIMEOUT_MS: i32 = 30000;
 const DEFAULT_TIMEOUT_MS: i32 = 5000;
@@ -190,11 +191,11 @@ impl NotificationCenter {
     /// Recalculates vertical stack positions for all toasts (Part 42, Addendum M).
     fn recalculate_stack_positions(&self) {
         let toasts = self.toasts.read();
-        let mut y_offset = MARGIN_TOP;
+        let mut _y_offset = MARGIN_TOP;
         for toast in toasts.iter() {
             if !toast.is_dismissing {
-                // stack_y target = y_offset (applied via set_target on next update)
-                y_offset += NOTIFICATION_HEIGHT + STACK_GAP;
+                // stack_y target = _y_offset (applied via set_target on next update)
+                _y_offset += NOTIFICATION_HEIGHT + STACK_GAP;
             }
         }
     }

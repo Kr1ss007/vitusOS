@@ -14,7 +14,6 @@
 //! → `wl_surface.commit` with a `wl_buffer` attached → added to scene graph
 //! → `RenderPipeline` composites on next frame.
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 

@@ -60,7 +60,7 @@ vitusOS/
 |   |-- cursors/               # macOS-grade compiled Wayland and X11 cursors
 |   |-- icons/                 # Scalable SVG icon suite (dock, panel, sidebar, mimetypes)
 |   |-- packages/              # Pre-bundled Zen Browser binary packages
-|   `-- sounds/                # Canonical uncompressed boot chime (Startup1.wav / 209 KB)
+|   `-- sounds/                # Canonical uncompressed boot chime (boot_chime.wav / 209 KB)
 |-- crates/
 |   |-- animus-core/           # EventBus, EOBus, StateManager, HardwareTopology, SoundEngine
 |   |-- animus-physics/        # Spring solvers, 2D edge resistance, AnimationEngine

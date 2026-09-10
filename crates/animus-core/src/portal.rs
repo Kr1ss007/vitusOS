@@ -9,7 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::event_bus::EventBus;
 use crate::events::AEEvent;

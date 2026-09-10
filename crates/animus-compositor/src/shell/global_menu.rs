@@ -520,6 +520,7 @@ impl GlobalMenu {
     }
 
     /// Calculate X position for submenu (aligns right edge to screen if needed).
+    #[allow(dead_code)]
     fn submenu_x_for_top_index(&self, index: usize, panel_w: f32) -> f32 {
         self.submenu_x_for(index, panel_w)
     }

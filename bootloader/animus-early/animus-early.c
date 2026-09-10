@@ -19,7 +19,14 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
+#include <linux/kd.h>     /* KD_GRAPHICS, KDSETMODE */
+#include <linux/vt.h>     /* VT_ACTIVATE, VT_DISALLOCATE */
 #include <sys/mman.h>
+#if __has_include(<libdrm/drm.h>)
+#include <libdrm/drm.h>
+#elif __has_include(<drm.h>)
+#include <drm.h>
+#endif
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <pipewire/pipewire.h>
@@ -82,13 +89,36 @@ static bool make_dumb(int fd, DumbBuf *db, uint32_t w, uint32_t h) {
 // pitch/4 = pixels-per-row (pitch includes alignment padding).
 static void render_splash(const DumbBuf *db) {
     uint32_t stride = db->pitch / 4;
+    /* Fill with #1A1208 warm black matching AnimusBoot GOP exactly. */
+    const uint32_t WARM_BLACK   = 0xFF1A1208u;
+    const uint32_t SPACE_ORANGE = 0xFFE85D00u;
+    const uint32_t WHITE        = 0xFFFFFFFFu;
     for (uint32_t y = 0; y < db->h; y++)
         for (uint32_t x = 0; x < db->w; x++)
-            db->map[y * stride + x] = 0xFFE85D00u;
-    uint32_t wx = (db->w - 280) / 2, wy = (db->h - 48) / 2;
-    for (uint32_t y = wy; y < wy + 48; y++)
-        for (uint32_t x = wx; x < wx + 280; x++)
-            db->map[y * stride + x] = 0xFFFFFFFFu;
+            db->map[y * stride + x] = WARM_BLACK;
+    /* Outer orange circle (32px radius) */
+    uint32_t cx = db->w / 2, cy = db->h / 2;
+    for (int32_t dy = -32; dy <= 32; dy++) {
+        for (int32_t dx = -32; dx <= 32; dx++) {
+            if ((dx*dx + dy*dy) <= 32*32) {
+                uint32_t px = (uint32_t)((int32_t)cx + dx);
+                uint32_t py = (uint32_t)((int32_t)cy + dy);
+                if (px < db->w && py < db->h)
+                    db->map[py * stride + px] = SPACE_ORANGE;
+            }
+        }
+    }
+    /* Inner white core (16px radius) */
+    for (int32_t dy = -16; dy <= 16; dy++) {
+        for (int32_t dx = -16; dx <= 16; dx++) {
+            if ((dx*dx + dy*dy) <= 16*16) {
+                uint32_t px = (uint32_t)((int32_t)cx + dx);
+                uint32_t py = (uint32_t)((int32_t)cy + dy);
+                if (px < db->w && py < db->h)
+                    db->map[py * stride + px] = WHITE;
+            }
+        }
+    }
 }
 
 // ── Boot chime (child process) ────────────────────────────────────
@@ -117,13 +147,30 @@ static void chime_proc(void *ud) {
 static const struct pw_stream_events CHIME_EVT = {PW_VERSION_STREAM_EVENTS, .process = chime_proc};
 
 static void play_chime_child(void) {
-    int fd = open("/etc/vitusos/sounds/boot_chime.wav", O_RDONLY);
+    const char *paths[] = {
+        "/usr/share/vitusos/sounds/boot_chime.wav",
+        "/etc/vitusos/sounds/boot_chime.wav",
+        "assets/sounds/boot_chime.wav",
+        "../assets/sounds/boot_chime.wav",
+        "/home/raven1zed/vitusOS/assets/sounds/boot_chime.wav",
+        NULL
+    };
+    int fd = -1;
+    for (int i = 0; paths[i] != NULL; i++) {
+        fd = open(paths[i], O_RDONLY);
+        if (fd >= 0) break;
+    }
     if (fd < 0) return;
     off_t sz = lseek(fd, 0, SEEK_END); lseek(fd, 0, SEEK_SET);
     if (sz <= 44) { close(fd); return; }
     uint8_t *wav = malloc((size_t)sz);
     if (read(fd, wav, (size_t)sz) != sz) { free(wav); close(fd); return; }
     close(fd);
+
+    uint16_t channels = *(uint16_t *)(wav + 22);
+    uint32_t sample_rate = *(uint32_t *)(wav + 24);
+    if (channels == 0) channels = 2;
+    if (sample_rate == 0) sample_rate = 22255;
 
     pw_init(NULL, NULL);
     ChimeS s = {.pcm = wav + 44, .sz = (size_t)(sz - 44), .pos = 0};
@@ -139,7 +186,7 @@ static void play_chime_child(void) {
     const struct spa_pod *params[1];
     params[0] = spa_format_audio_raw_build(&b, SPA_PARAM_EnumFormat,
         &SPA_AUDIO_INFO_RAW_INIT(.format = SPA_AUDIO_FORMAT_S16,
-                                  .rate = 44100, .channels = 2));
+                                  .rate = sample_rate, .channels = channels));
     pw_stream_connect(s.stream, PW_DIRECTION_OUTPUT, PW_ID_ANY,
         PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS, params, 1);
     pw_main_loop_run(s.loop);
@@ -153,19 +200,32 @@ static bool do_modprobe(const char *name) {
     char cmd[128]; snprintf(cmd, sizeof(cmd), "modprobe %s 2>/dev/null", name);
     return system(cmd) == 0;
 }
+/* GPU driver load for HP Victus 15 PRIME (NVIDIA RTX 3050 + Intel i915 eDP-1).
+ * Order is NON-NEGOTIABLE for PRIME Sync to work. */
 static void load_driver(const ANIMUS_GPU_HANDOFF *h) {
     switch(h->vendor) {
         case GPU_VENDOR_NVIDIA:
+            /* i915 MUST bind to eDP-1 before NVIDIA probes PCIe topology */
+            do_modprobe("i915");
+            /* NVIDIA proprietary: mandatory 4-step load order */
             if (do_modprobe("nvidia")) {
                 do_modprobe("nvidia_modeset");
                 do_modprobe("nvidia_uvm");
                 do_modprobe("nvidia_drm");
             }
             break;
-        case GPU_VENDOR_AMD:           do_modprobe("amdgpu"); break;
-        case GPU_VENDOR_INTEL_ARC:     do_modprobe("xe");     break;
-        case GPU_VENDOR_INTEL_LEGACY:  do_modprobe("i915");   break;
-        default: break;
+        case GPU_VENDOR_AMD:
+            do_modprobe("amdgpu");
+            break;
+        case GPU_VENDOR_INTEL_ARC:
+            do_modprobe("xe");
+            break;
+        case GPU_VENDOR_INTEL_LEGACY:
+            do_modprobe("i915");
+            break;
+        default:
+            do_modprobe("i915");
+            break;
     }
 }
 
@@ -204,10 +264,28 @@ int main(void) {
 
     load_driver(&h);
 
-    // close(drm_fd) triggers sysfb_disable() on Linux >=5.15
-    // Native driver takes over. Space Orange frame stays visible.
+    /* VT suppression: put tty1 and tty7 into graphics mode so
+     * fbcon cannot print text even if it somehow gets a VT.
+     * Activate VT 7 and disallocate VT 1 for zero-flicker handoff. */
+    {
+        int vtfd = open("/dev/tty1", O_RDWR | O_CLOEXEC);
+        if (vtfd >= 0) {
+            ioctl(vtfd, KDSETMODE, KD_GRAPHICS);
+            ioctl(vtfd, VT_DISALLOCATE, 0);
+            close(vtfd);
+        }
+        int vt7fd = open("/dev/tty7", O_RDWR | O_CLOEXEC);
+        if (vt7fd >= 0) {
+            ioctl(vt7fd, KDSETMODE, KD_GRAPHICS);
+            ioctl(vt7fd, VT_ACTIVATE, 7);
+            close(vt7fd);
+        }
+    }
+
+    /* close(drm) triggers sysfb_disable() on Linux >=5.15.
+     * Native driver takes over. Warm black frame stays visible. */
     close(drm);
-    usleep(50000);  // 50ms — only sleep in entire boot pipeline
+    usleep(50000);  /* 50ms — only sleep in entire boot pipeline */
 
     // DumbBuffer intentionally NOT destroyed
     // Frame stays visible until AnimusEngine commits first Vulkan frame

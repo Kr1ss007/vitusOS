@@ -38,6 +38,7 @@ anyhow.workspace = true
 thiserror.workspace = true
 crossbeam-channel.workspace = true
 zeroize = { workspace = true, features = ["alloc"] }
+sd-notify.workspace = true
 
 # Compositor Engine — Linux bare-metal dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -52,7 +53,7 @@ input.workspace = true
 nix.workspace = true
 ash.workspace = true
 shaderc.workspace = true
-pam = { workspace = true, optional = true }
+libc.workspace = true
 
 [lib]
 name = "animus_compositor"
@@ -64,5 +65,6 @@ doctest = false
 
 [features]
 default = []
-pam-auth = ["pam"]
+pam-auth = []
+
 

@@ -13,9 +13,7 @@
 //!   [N bytes] serde-serialized payload (or empty if no payload)
 //!
 //! Session process binds the socket. Compositor process connects to it.
-//! Reconnect: compositor attempts reconnect every 500ms on connection loss.
-//!
-//! Compiled on WSL2/Linux (the vitusOS build environment). No stubs needed.
+//! Compiled on Linux (the vitusOS production environment). No stubs.
 
 use std::io::{self, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};

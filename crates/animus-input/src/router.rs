@@ -12,7 +12,6 @@ use animus_core::event_bus::EventBus;
 use animus_core::events::AEEvent;
 use parking_lot::RwLock;
 use std::sync::Arc;
-use tracing::info;
 
 pub struct InputRouter {
     pub motion_wave: Arc<RwLock<MotionWave>>,

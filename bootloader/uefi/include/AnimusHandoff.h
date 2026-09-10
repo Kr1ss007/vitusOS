@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 #define ANIMUS_HANDOFF_GUID { 0xe4b8e798, 0xa5f4, 0x4b2c, { 0xb9, 0xab, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab } }
+#define ANIMUS_HANDOFF_GUID_STR "e4b8e798-a5f4-4b2c-b9ab-1234567890ab"
 #define ANIMUS_HANDOFF_VAR_NAME L"AnimusGpuHandoff"
 
 typedef enum {

@@ -21,7 +21,6 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::Arc;
 use tracing::{info, warn};
 use zeroize::Zeroize;
 
@@ -112,6 +111,7 @@ pub struct VaultStatus {
 pub struct ProximityGuard {
     devices: RwLock<Vec<HevTrustedDevice>>,
     last_rssi: RwLock<HashMap<String, f32>>,
+    #[allow(dead_code)]
     lock_grace_period_s: RwLock<f32>,
 }
 

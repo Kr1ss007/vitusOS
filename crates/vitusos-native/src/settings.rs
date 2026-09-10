@@ -8,7 +8,6 @@ use animus_core::dbus::SystemDbusManager;
 use animus_core::event_bus::EventBus;
 use animus_core::events::AEEvent;
 use animus_physics::spring::{SpringProfile, SpringSolver};
-use animus_render::altitude::SurfaceAltitude;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

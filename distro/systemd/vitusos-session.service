@@ -7,14 +7,17 @@ Before=animus-compositor.service
 Requires=dbus.service
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=all
 Environment=XDG_CURRENT_DESKTOP=vitusOS
 Environment=XDG_SESSION_TYPE=wayland
-Environment=ANIMUS_LOG=info
+Environment=ANIMUS_LOG=error
 ExecStart=/usr/bin/vitusos-session
 Restart=on-failure
 RestartSec=1s
 WatchdogSec=10s
+KillSignal=SIGTERM
+TimeoutStopSec=5s
 StandardOutput=journal
 StandardError=journal
 User=vitus

@@ -69,11 +69,7 @@ pub struct AnimusSeat {
     pub pointer: PointerState,
     pub modifiers: ModifierState,
     pub focused_keyboard_surface: Option<u32>,
-    /// libinput device handle (Linux only). On other platforms, events are
-    /// injected synthetically for testing.
-    #[cfg(target_os = "linux")]
-    pub libinput_active: bool,
-    #[cfg(not(target_os = "linux"))]
+    /// Whether the libinput subsystem is actively driving hardware events
     pub libinput_active: bool,
 }
 

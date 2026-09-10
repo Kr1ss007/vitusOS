@@ -6,7 +6,6 @@
 //! Changes apply live — no "Apply" button.
 
 use animus_physics::spring::{SpringProfile, SpringSolver};
-use animus_render::altitude::SurfaceAltitude;
 
 /// Content cross-fade spring for section switching.
 pub struct SectionTransition {

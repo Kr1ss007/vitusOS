@@ -42,7 +42,6 @@ pub enum AudioBackend {
     PipeWire,
     PulseAudio,
     Alsa,
-    DirectSound,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +65,7 @@ impl SoundEngine {
     pub fn new() -> Self {
         let candidate_dirs = [
             PathBuf::from("/usr/share/vitusos/sounds"),
+            PathBuf::from("/etc/vitusos/sounds"),
             PathBuf::from("assets/sounds"),
             PathBuf::from("../assets/sounds"),
             PathBuf::from("../../assets/sounds"),
@@ -92,27 +92,32 @@ impl SoundEngine {
         engine
     }
 
-    /// Detects active PipeWire / system audio sinks across Linux and host OS.
+    /// Detects active PipeWire / system audio sinks on Linux bare-metal.
     pub fn detect_audio_sinks(&self) {
         let mut sinks = Vec::new();
 
-        #[cfg(target_os = "linux")]
-        {
-            // Query PipeWire / wireplumber or fallback to default stereo sink
+        // Query real sound cards from ALSA procfs
+        if let Ok(content) = std::fs::read_to_string("/proc/asound/cards") {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with(|c: char| c.is_ascii_digit()) && trimmed.contains('[') && trimmed.contains(']') {
+                    let card_id = trimmed.split_whitespace().next().unwrap_or("0");
+                    let name = trimmed.split('[').nth(1).and_then(|s| s.split(']').next()).unwrap_or("HDA");
+                    sinks.push(AudioSinkInfo {
+                        name: format!("alsa_card_{}_{}", card_id, name),
+                        description: format!("ALSA / PipeWire Audio Hardware [{}]", name),
+                        channels: 2,
+                        sample_rate: 48000,
+                        is_default: sinks.is_empty(),
+                    });
+                }
+            }
+        }
+
+        if sinks.is_empty() {
             sinks.push(AudioSinkInfo {
                 name: String::from("alsa_output.pci-0000_00_1f.3.analog-stereo"),
                 description: String::from("PipeWire Spatial Sound Server (Realtek ALC294)"),
-                channels: 2,
-                sample_rate: 48000,
-                is_default: true,
-            });
-        }
-
-        #[cfg(not(target_os = "linux"))]
-        {
-            sinks.push(AudioSinkInfo {
-                name: String::from("DirectSound.PrimaryAudioDriver"),
-                description: String::from("Realtek High Definition Audio (Spatial Boot Chime)"),
                 channels: 2,
                 sample_rate: 48000,
                 is_default: true,
@@ -123,16 +128,29 @@ impl SoundEngine {
         *self.sinks.write() = sinks;
     }
 
-    /// Resolves sound file path (.wav or .mp3).
+    /// Resolves canonical WAV sound file path (.wav only).
     pub fn resolve_sound_path(&self, sound_name: &str) -> Option<PathBuf> {
-        let wav_path = self.sound_dir.join(format!("{}.wav", sound_name));
-        if wav_path.exists() {
-            return Some(wav_path);
-        }
+        let candidate_dirs = [
+            self.sound_dir.clone(),
+            PathBuf::from("/usr/share/vitusos/sounds"),
+            PathBuf::from("/etc/vitusos/sounds"),
+            PathBuf::from("/home/raven1zed/vitusOS/assets/sounds"),
+            PathBuf::from("assets/sounds"),
+            PathBuf::from("../assets/sounds"),
+            PathBuf::from("../../assets/sounds"),
+            std::env::var("CARGO_MANIFEST_DIR")
+                .map(|p| PathBuf::from(p).join("../../assets/sounds"))
+                .unwrap_or_default(),
+        ];
 
-        let mp3_path = self.sound_dir.join(format!("{}.mp3", sound_name));
-        if mp3_path.exists() {
-            return Some(mp3_path);
+        for dir in &candidate_dirs {
+            if dir.as_os_str().is_empty() {
+                continue;
+            }
+            let wav_path = dir.join(format!("{}.wav", sound_name));
+            if wav_path.exists() {
+                return Some(wav_path);
+            }
         }
 
         None
@@ -168,36 +186,23 @@ impl SoundEngine {
                 Self::dispatch_playback(&path_clone, effective_vol);
             });
         } else {
-            info!(
-                "SoundEngine: Spatial sound '{}' queued (simulated in headless/test mode)",
-                sound_name
+            tracing::warn!(
+                "SoundEngine: Sound asset '{}' not found in sound directory ({:?})",
+                sound_name, self.sound_dir
             );
         }
     }
 
     fn dispatch_playback(path: &Path, _volume: f32) {
-        #[cfg(target_os = "linux")]
-        {
-            // Try PipeWire pw-play first, then paplay, then aplay
-            let pw_status = Command::new("pw-play")
-                .arg(path)
-                .status();
+        // Try PipeWire pw-play first, then paplay, then aplay
+        let pw_status = Command::new("pw-play")
+            .arg(path)
+            .status();
 
-            if pw_status.is_err() || !pw_status.as_ref().map(|s| s.success()).unwrap_or(false) {
-                let _ = Command::new("paplay").arg(path).status();
-            }
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            // On Windows, if wav file, play asynchronously via SoundPlayer
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if ext.eq_ignore_ascii_case("wav") {
-                    let path_str = path.to_string_lossy().to_string();
-                    let _ = Command::new("powershell")
-                        .args(["-NoProfile", "-Command", &format!("(New-Object Media.SoundPlayer '{}').PlaySync()", path_str)])
-                        .status();
-                }
+        if pw_status.is_err() || !pw_status.as_ref().map(|s| s.success()).unwrap_or(false) {
+            let pa_status = Command::new("paplay").arg(path).status();
+            if pa_status.is_err() || !pa_status.as_ref().map(|s| s.success()).unwrap_or(false) {
+                let _ = Command::new("aplay").arg(path).status();
             }
         }
     }
@@ -225,7 +230,7 @@ mod tests {
     fn test_sound_engine_boot_chime_resolution() {
         let engine = SoundEngine::new();
         let chime_path = engine.resolve_sound_path(sounds::BOOT_CHIME);
-        assert!(chime_path.is_some(), "boot_chime.wav or boot_chime.mp3 must be resolvable");
+        assert!(chime_path.is_some(), "boot_chime.wav must be resolvable");
         engine.play(sounds::BOOT_CHIME, 1.0);
     }
 }

@@ -1,0 +1,14 @@
+[Unit]
+Description=vitusOS Getty Virtual Console Inhibitor
+Documentation=https://github.com/vitusOS/vitusos
+# Ensures no text console login prompts ever appear on the physical display
+Before=getty@tty1.service getty@tty7.service autovt@tty1.service autovt@tty7.service
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+
+[Install]
+WantedBy=sysinit.target

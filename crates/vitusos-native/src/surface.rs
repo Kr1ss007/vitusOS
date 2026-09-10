@@ -4,14 +4,8 @@
 //! (Filer, Settings, Terminow, Pathfinder) allowing them to run as real
 //! processes communicating with the compositor via `xdg_wm_base` and `ae_shell_manager_v1`.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use tracing::{info, warn};
-
-#[cfg(target_os = "linux")]
-use wayland_client::{
-    protocol::{wl_compositor, wl_registry, wl_surface},
-    Connection, Dispatch, EventQueue, QueueHandle,
-};
 
 use animus_appkit::layout::surface::AEWindow;
 
@@ -39,25 +33,18 @@ impl AENativeSurface {
 
     /// Connects to the Wayland compositor socket and initializes globals.
     pub fn connect(&mut self) -> Result<()> {
-        #[cfg(target_os = "linux")]
-        {
-            info!("AENativeSurface: Attempting to connect to Wayland display for '{}'", self.app_id);
-            // In a full implementation, we establish the wayland_client::Connection,
-            // get the wl_registry, bind wl_compositor, xdg_wm_base, ae_shell_manager_v1,
-            // and create a wl_surface + xdg_toplevel.
-            
-            // For now, we simulate the connection state to unblock the build.
-            self.is_connected = true;
-            info!("AENativeSurface: Connected '{}' to compositor Wayland socket ✓", self.app_id);
+        info!("AENativeSurface: Attempting to connect to Wayland display for '{}'", self.app_id);
+        match wayland_client::Connection::connect_to_env() {
+            Ok(_conn) => {
+                self.is_connected = true;
+                info!("AENativeSurface: Connected '{}' to compositor Wayland socket ✓", self.app_id);
+                Ok(())
+            }
+            Err(e) => {
+                warn!("AENativeSurface: Could not connect to Wayland socket for '{}': {}", self.app_id, e);
+                anyhow::bail!("Failed to connect to Wayland display for '{}': {}", self.app_id, e);
+            }
         }
-        
-        #[cfg(not(target_os = "linux"))]
-        {
-            info!("AENativeSurface: Stub connection on Windows for '{}'", self.app_id);
-            self.is_connected = true;
-        }
-
-        Ok(())
     }
 
     pub fn set_geometry(&mut self, width: u32, height: u32) {
@@ -126,20 +113,18 @@ impl AELayerSurface {
 
     /// Connects to the Wayland compositor socket and initializes layer shell globals.
     pub fn connect(&mut self) -> Result<()> {
-        #[cfg(target_os = "linux")]
-        {
-            info!("AELayerSurface: Attempting to connect to Wayland display for layer component '{}'", self.app_id);
-            self.is_connected = true;
-            info!("AELayerSurface: Connected '{}' to compositor layer shell ✓", self.app_id);
+        info!("AELayerSurface: Attempting to connect to Wayland display for layer component '{}'", self.app_id);
+        match wayland_client::Connection::connect_to_env() {
+            Ok(_conn) => {
+                self.is_connected = true;
+                info!("AELayerSurface: Connected '{}' to compositor layer shell ✓", self.app_id);
+                Ok(())
+            }
+            Err(e) => {
+                warn!("AELayerSurface: Could not connect to Wayland socket for layer component '{}': {}", self.app_id, e);
+                anyhow::bail!("Failed to connect to Wayland display for layer component '{}': {}", self.app_id, e);
+            }
         }
-        
-        #[cfg(not(target_os = "linux"))]
-        {
-            info!("AELayerSurface: Stub connection on Windows for layer component '{}'", self.app_id);
-            self.is_connected = true;
-        }
-
-        Ok(())
     }
 
     pub fn set_geometry(&mut self, width: u32, height: u32) {

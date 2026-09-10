@@ -7,6 +7,7 @@ pub mod global_menu;
 pub mod lock_screen;
 pub mod login_manager;
 pub mod notifications;
+pub mod pam;
 pub mod panel;
 pub mod personality;
 pub mod shutdown_screen;

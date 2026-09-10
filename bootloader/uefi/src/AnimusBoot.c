@@ -24,19 +24,39 @@ static const CHAR16 *gKernelPaths[] = {
 };
 
 static const CHAR16 *gDefaultCmdline =
+    /* Base silence */
     (const CHAR16*)L"BOOT_IMAGE=/EFI/vitusos/kernel "
     L"quiet splash "
-    L"vt.global_cursor_default=0 "
     L"loglevel=0 "
+    L"logo.nologo "
+    /* Virtual console suppression (zero TTY, zero text, zero cursor) */
+    L"vt.global_cursor_default=0 "
+    L"vt.handoff=7 "
+    L"fbcon=map:99 "
+    L"fbcon=nodefer "
+    /* Udev and systemd log suppression */
+    L"rd.udev.log_level=3 "
+    L"udev.log_level=3 "
+    L"systemd.show_status=0 "
+    L"rd.systemd.show_status=0 "
+    L"systemd.log_level=err "
+    /* NVIDIA RTX 3050 GA107BM + PRIME Sync (HP Victus 15) */
     L"nvidia-drm.modeset=1 "
     L"nvidia-drm.fbdev=1 "
-    L"amdgpu.modeset=1 "
-    L"amdgpu.seamless=1 "
+    /* Intel UHD i915 Raptor Lake-P (eDP-1 internal display) */
     L"i915.fastboot=1 "
-    L"drm.modeset=1 "
-    L"console=ttyS0,115200 "
-    L"console=tty1 "
-    L"systemd.show_status=0";
+    L"i915.modeset=1 "
+    /* DRM global */
+    L"drm.debug=0 "
+    /* Serial-only diagnostic console (never shown on screen) */
+    L"console=ttyS0,115200n8 "
+    /* ACPI + power for HP Victus */
+    L"acpi_osi=Linux "
+    L"acpi_backlight=native "
+    L"pcie_aspm=off "
+    /* IOMMU */
+    L"iommu=pt "
+    L"intel_iommu=igfx_off";
 
 static EFI_BOOT_SERVICES *gBS = NULL;
 static EFI_RUNTIME_SERVICES *gRT = NULL;

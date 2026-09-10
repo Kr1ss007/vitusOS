@@ -12,7 +12,7 @@ DESKTOP_SESSION=vitusOS
 WLR_RENDERER=vulkan
 WLR_NO_HARDWARE_CURSORS=0
 ANIMUS_VULKAN_VALIDATION=0
-ANIMUS_LOG_LEVEL=info
+ANIMUS_LOG_LEVEL=error
 
 # Toolkit Integration (Wayland-Native)
 GDK_BACKEND=wayland,x11
@@ -24,10 +24,11 @@ ELECTRON_OZONE_PLATFORM_HINT=wayland
 CLUTTER_BACKEND=wayland
 SDL_VIDEODRIVER=wayland
 
-# Hardware Graphics Acceleration
-LIBVA_DRIVER_NAME=nvidia
-GBM_BACKEND=nvidia-drm
+# Hardware Graphics Acceleration (Intel UHD eDP-1 Display + NVIDIA RTX 3050 PRIME)
+# Do NOT force GBM_BACKEND=nvidia-drm globally: Mesa routes GBM per-device (i915 on card1, nvidia on card2)
 __GLX_VENDOR_LIBRARY_NAME=nvidia
+__NV_PRIME_RENDER_OFFLOAD=1
+__VK_LAYER_NV_optimus=NVIDIA_only
 __GL_GSYNC_ALLOWED=1
 __GL_VRR_ALLOWED=1
 

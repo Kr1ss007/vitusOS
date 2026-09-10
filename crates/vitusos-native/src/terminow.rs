@@ -6,7 +6,6 @@
 
 use animus_core::event_bus::EventBus;
 use animus_physics::spring::{SpringProfile, SpringSolver};
-use animus_render::altitude::SurfaceAltitude;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -77,9 +76,7 @@ impl TerminalTab {
         let mut initial_lines = Vec::new();
         initial_lines.push("vitusOS Darwin Engine v1.0.0 (x86_64-pc-vitusos-gnu)".to_string());
         initial_lines.push("Welcome to Terminow — Space Orange GPU Terminal".to_string());
-        initial_lines.push("Type 'help' for built-in diagnostic commands.".to_string());
         initial_lines.push("".to_string());
-        initial_lines.push("aturing@vitusOS:~$ ".to_string());
 
         let mut tab = Self {
             id,
@@ -108,12 +105,14 @@ impl TerminalTab {
             use std::ffi::CString;
 
             if let Ok(pty) = openpty(None, None) {
-                use std::os::unix::io::{AsRawFd, FromRawFd};
+                use std::os::unix::io::AsRawFd;
                 match unsafe { fork() } {
                     Ok(ForkResult::Parent { child }) => {
                         let master_raw = pty.master.as_raw_fd();
                         // Leak the master fd so it stays alive — we own it as raw i32
                         std::mem::forget(pty.master);
+                        use nix::fcntl::{fcntl, FcntlArg, OFlag};
+                        let _ = fcntl(master_raw, FcntlArg::F_SETFL(OFlag::O_NONBLOCK));
                         self.master_fd = Some(master_raw);
                         self.child_pid = Some(child.as_raw());
                         info!("Terminow: Spawned real PTY child PID {}", child);
@@ -121,11 +120,9 @@ impl TerminalTab {
                     Ok(ForkResult::Child) => {
                         let _ = setsid();
                         let slave_raw = pty.slave.as_raw_fd();
-                        unsafe {
-                            let _ = dup2(slave_raw, 0);
-                            let _ = dup2(slave_raw, 1);
-                            let _ = dup2(slave_raw, 2);
-                        }
+                        let _ = dup2(slave_raw, 0);
+                        let _ = dup2(slave_raw, 1);
+                        let _ = dup2(slave_raw, 2);
                         let shell = CString::new("/bin/bash").unwrap_or_default();
                         let args = [shell.clone()];
                         let _ = nix::unistd::execvp(&shell, &args);
@@ -133,6 +130,45 @@ impl TerminalTab {
                     }
                     Err(e) => {
                         tracing::warn!("Terminow: Fork failed: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Reads output bytes from the PTY master into terminal line buffers.
+    pub fn read_pty_output(&mut self) {
+        #[cfg(unix)]
+        {
+            if let Some(fd) = self.master_fd {
+                use nix::unistd::read;
+                let mut buf = [0u8; 4096];
+                while let Ok(n) = read(fd, &mut buf[..]) {
+                    if n == 0 {
+                        break;
+                    }
+                    let s = String::from_utf8_lossy(&buf[..n]);
+                    for ch in s.chars() {
+                        if ch == '\n' {
+                            self.new_line();
+                        } else if ch == '\r' {
+                            self.cursor_col = 0;
+                        } else if ch == '\x08' {
+                            if self.cursor_col > 0 {
+                                self.cursor_col -= 1;
+                                if let Some(line) = self.lines.last_mut() {
+                                    line.pop();
+                                }
+                            }
+                        } else {
+                            if self.lines.is_empty() {
+                                self.lines.push(String::new());
+                            }
+                            if let Some(line) = self.lines.last_mut() {
+                                line.push(ch);
+                            }
+                            self.cursor_col += 1;
+                        }
                     }
                 }
             }
@@ -151,7 +187,7 @@ impl TerminalTab {
         {
             if let Some(fd) = self.master_fd {
                 use nix::unistd::write;
-                use std::os::fd::{BorrowedFd, AsFd};
+                use std::os::fd::BorrowedFd;
                 let bfd = unsafe { BorrowedFd::borrow_raw(fd) };
                 let _ = write(bfd, text.as_bytes());
             }
@@ -169,6 +205,11 @@ impl TerminalTab {
         self.command_history.push(trimmed.to_string());
         self.new_line();
 
+        if trimmed == "clear" {
+            self.lines.clear();
+            return;
+        }
+
         #[cfg(unix)]
         {
             if let Some(fd) = self.master_fd {
@@ -178,37 +219,9 @@ impl TerminalTab {
                 let mut cmd_bytes = input.as_bytes().to_vec();
                 cmd_bytes.push(b'\n');
                 let _ = write(bfd, &cmd_bytes);
+                self.read_pty_output();
             }
         }
-
-        match trimmed {
-            "help" => {
-                self.lines.push("Available vitusOS Terminal Utilities:".to_string());
-                self.lines.push("  vitusos-diag     — System & Crash Vessel Diagnostic Feed".to_string());
-                self.lines.push("  pathfinder       — Open Universal Search Overlay".to_string());
-                self.lines.push("  filer            — Launch Glass Spatial File Manager".to_string());
-                self.lines.push("  zen-browser      — Launch Gecko Spatial Browser".to_string());
-                self.lines.push("  hev-seal         — Inspect TPM 2.0 PCR Encryption Vault".to_string());
-                self.lines.push("  uname -a         — Print Kernel & AnimusEngine Architecture".to_string());
-            }
-            "uname" | "uname -a" => {
-                self.lines.push("Linux vitusOS 6.8.0-noble #1 SMP PREEMPT_DYNAMIC AnimusEngine x86_64 GNU/Linux".to_string());
-            }
-            "vitusos-diag" => {
-                self.lines.push("[AnimusEngine] 10 Vessels Running | 0 Dead | 144Hz Frame Pacing Active".to_string());
-                self.lines.push("[Vulkan 1.3] Direct Scanout Pipeline Ready on Primary GPU".to_string());
-                self.lines.push("[HEV Vault] TPM 2.0 PCR Sealing Active (AES-256-GCM)".to_string());
-            }
-            "clear" => {
-                self.lines.clear();
-            }
-            other => {
-                self.lines.push(format!("bash: {}: command dispatched to system", other));
-            }
-        }
-
-        self.new_line();
-        self.write_text("aturing@vitusOS:~$ ");
     }
 }
 
@@ -289,6 +302,11 @@ impl Terminow {
 
     pub fn update(&self, dt: f32) {
         self.cursor_pulse.write().update(dt);
+        let mut tabs = self.tabs.write();
+        let active = *self.active_tab_idx.read();
+        if let Some(tab) = tabs.get_mut(active) {
+            tab.read_pty_output();
+        }
     }
 }
 
@@ -307,17 +325,19 @@ mod tests {
         assert_eq!(*term.active_tab_idx.read(), 1);
 
         // Input command in active tab
-        term.input_char('u');
-        term.input_char('n');
-        term.input_char('a');
-        term.input_char('m');
         term.input_char('e');
+        term.input_char('c');
+        term.input_char('h');
+        term.input_char('o');
+        term.input_char(' ');
+        term.input_char('h');
+        term.input_char('i');
         term.submit_command();
 
         {
             let tabs = term.tabs.read();
             let tab = &tabs[1];
-            assert!(tab.lines.iter().any(|l| l.contains("AnimusEngine")));
+            assert_eq!(tab.command_history.last().map(|s| s.as_str()), Some("echo hi"));
         }
 
         term.close_tab(1);

@@ -19,14 +19,14 @@ use animus_compositor::shell::{
     DockItem, GlobalMenu, LockScreen, NotificationCenter, Panel, ShutdownScreen, SystemScreen,
     WelcomeScreen,
 };
-use animus_compositor::shell_controller::{ShellController, ShellMode};
+use animus_compositor::shell_controller::ShellController;
 use animus_compositor::compositor_renderer::CompositorRenderer;
 use animus_compositor::window::AEWindow;
 use animus_compositor::workspace::VirtualDesktopManager;
 use animus_compositor::state::CompositorState;
 use animus_compositor::backend::{AnimusBackend, AnimusWinitBackend};
 #[cfg(target_os = "linux")]
-use animus_compositor::backend::AnimusDrmBackend;
+use animus_compositor::backend::{AnimusDrmBackend, UdevLibinputSeat};
 
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
@@ -62,6 +62,9 @@ pub struct CompositorContext {
     pub renderer: CompositorRenderer,
     /// Event channel receiver — events from EventBus dispatched to ShellController.
     event_rx: crossbeam_channel::Receiver<AEEvent>,
+    /// Libinput seat — wires keyboard/mouse/touch into the compositor (Linux only).
+    #[cfg(target_os = "linux")]
+    pub libinput_seat: Option<UdevLibinputSeat>,
 }
 
 impl CompositorContext {
@@ -83,19 +86,14 @@ impl CompositorContext {
         // will be reconfigured when the first output connects via the calloop
         // UdevBackend event source. For now, the handoff resolution is the best estimate.
         
-        // Choose backend based on platform and environment
+        // Choose backend based on environment (bare-metal DRM/KMS vs nested Wayland dev)
         let backend: Box<dyn AnimusBackend> = {
-            #[cfg(target_os = "linux")]
-            {
-                if std::env::var("WAYLAND_DISPLAY").is_ok() || std::path::Path::new("/mnt/wslg").exists() {
-                    Box::new(AnimusWinitBackend::new(width, height).unwrap())
-                } else {
-                    Box::new(AnimusDrmBackend::new().unwrap())
-                }
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
+            if std::env::var("ANIMUS_BACKEND").as_deref() == Ok("drm") {
+                Box::new(AnimusDrmBackend::new().unwrap())
+            } else if std::env::var("WAYLAND_DISPLAY").is_ok() {
                 Box::new(AnimusWinitBackend::new(width, height).unwrap())
+            } else {
+                Box::new(AnimusDrmBackend::new().unwrap())
             }
         };
 
@@ -160,6 +158,8 @@ impl CompositorContext {
                 });
                 rx
             },
+            #[cfg(target_os = "linux")]
+            libinput_seat: None, // Wired into calloop in run_bare_metal()
         };
 
         ctx.spawn_native_daemons();
@@ -256,18 +256,8 @@ fn main() -> anyhow::Result<()> {
     ctx.boot_crossfade.set_progress(1.00); // Shell crossfade ready
     ctx.boot_crossfade.begin_fade();
 
-    info!("vitusOS Compositor initialized. Running frame loop...");
-
-    // 4. Run the platform-specific event loop
-    #[cfg(target_os = "linux")]
-    {
-        run_bare_metal(ctx)?;
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    {
-        run_dev_loop(ctx)?;
-    }
+    // 4. Run the production event loop
+    run_bare_metal(ctx)?;
 
     info!("vitusOS Engine shutting down.");
     Ok(())
@@ -285,6 +275,7 @@ fn run_bare_metal(mut ctx: CompositorContext) -> anyhow::Result<()> {
     use calloop::EventLoop;
     use calloop::generic::Generic;
     use calloop::{Interest, Mode};
+    use std::os::unix::io::AsFd;
 
     info!("AnimusEngine: Linux bare-metal event loop starting (calloop)");
 
@@ -295,9 +286,8 @@ fn run_bare_metal(mut ctx: CompositorContext) -> anyhow::Result<()> {
 
     // ── Event Source 1: Frame Timer (144Hz) ───────────────────────────
     //
-    // This drives the compositor frame loop. On bare metal with DRM/KMS,
-    // this will be replaced by DRM vblank events (DrmDeviceNotifier).
-    // For now, a 144Hz timer ensures consistent frame pacing.
+    // Drives the compositor frame loop at 144Hz.
+    // On bare metal with DRM/KMS this will be replaced by DRM vblank events.
 
     let frame_duration = std::time::Duration::from_micros(1_000_000 / 144);
     let timer = calloop::timer::Timer::from_duration(frame_duration);
@@ -311,13 +301,51 @@ fn run_bare_metal(mut ctx: CompositorContext) -> anyhow::Result<()> {
         })
         .map_err(|e| anyhow::anyhow!("Failed to insert frame timer: {}", e))?;
 
-    // ── Event Source 2: Wayland Listening Socket ───────────────────────
+    // ── Event Source 2: DRM Backend Initialization ─────────────────────
+    //
+    // Initialize the DRM/KMS backend now that calloop is ready.
+    // AnimusDrmBackend::new() finds the device; initialize() does modesetting.
+    // We also try to insert the DrmDeviceNotifier for vblank-paced frame loop.
+
+    if let Some(drm_backend) = ctx.state.backend.as_any_mut().downcast_mut::<AnimusDrmBackend>() {
+        match drm_backend.initialize() {
+            Ok(Some(notifier)) => {
+                info!("AnimusEngine: DRM backend initialized, inserting vblank notifier");
+                // The DrmDeviceNotifier is an EventSource that fires on vblank.
+                // When it fires, we should queue a frame render instead of the timer.
+                // For now, register it to keep the kernel DRM state machine happy.
+                if let Err(e) = loop_handle.insert_source(notifier, |event, _, _ctx| {
+                    use smithay::backend::drm::DrmEvent;
+                    match event {
+                        DrmEvent::VBlank(crtc) => {
+                            tracing::trace!("AnimusEngine: VBlank on CRTC {:?}", crtc);
+                            // Frame is already paced by the 144Hz timer source.
+                            // In a future iteration, we'll remove the timer and
+                            // only render on VBlank for perfect frame pacing.
+                        }
+                        DrmEvent::Error(e) => {
+                            tracing::error!("AnimusEngine: DRM device error: {:?}", e);
+                        }
+                    }
+                }) {
+                    tracing::warn!("AnimusEngine: Failed to insert DRM notifier: {}", e);
+                }
+            }
+            Ok(std::option::Option::None) => {
+                info!("AnimusEngine: DRM backend initialized (no notifier)");
+            }
+            Err(e) => {
+                tracing::warn!("AnimusEngine: DRM backend initialization failed ({}), continuing without KMS", e);
+            }
+        }
+    }
+
+    // ── Event Source 3: Wayland Listening Socket ───────────────────────
     //
     // When a Wayland client connects (e.g. a native app or third-party app),
     // this fires and we accept the connection via dispatch_wayland().
     // The socket fd is polled for readability.
 
-    // Take the socket out of state to avoid borrow conflicts with event_loop.run()
     let socket = ctx.state.socket.take();
 
     if let Some(socket) = socket {
@@ -338,7 +366,7 @@ fn run_bare_metal(mut ctx: CompositorContext) -> anyhow::Result<()> {
                         }
                     }
                 }
-                // Dispatch pending client messages
+                // Dispatch pending client messages against persistent SmithayState
                 ctx.state.dispatch_wayland_clients_only();
                 Ok(calloop::PostAction::Continue)
             })
@@ -346,15 +374,13 @@ fn run_bare_metal(mut ctx: CompositorContext) -> anyhow::Result<()> {
         info!("AnimusEngine: Wayland socket event source registered");
     }
 
-    // ── Event Source 3: Udev Backend (DRM device hotplug) ──────────────
+    // ── Event Source 4: Udev Backend (DRM device hotplug) ──────────────
     //
-    // Monitors /dev/dri for device addition/removal. On hotplug, the
-    // DRM backend would re-enumerate connectors and create/destroy outputs.
-    // UdevBackend implements EventSource directly.
+    // Monitors /dev/dri for device addition/removal. Handles hot-plug of
+    // monitors and GPU resets without crashing the compositor.
 
     match smithay::backend::udev::UdevBackend::new("seat0") {
         Ok(udev) => {
-            // Log initial device list
             let devices: Vec<_> = udev.device_list().collect();
             info!("AnimusEngine: UdevBackend monitoring {} DRM device(s)", devices.len());
             for (dev_id, path) in &devices {
@@ -367,15 +393,36 @@ fn run_bare_metal(mut ctx: CompositorContext) -> anyhow::Result<()> {
                     match event {
                         UdevEvent::Added { device_id, path } => {
                             info!("AnimusEngine: DRM device added: {} at {:?}", device_id, path);
-                            // TODO: Re-initialize DRM backend for this device
+                            // Re-scan for new connector and initialize output
+                            if let Some(drm) = ctx.state.backend.as_any_mut().downcast_mut::<AnimusDrmBackend>() {
+                                if drm.drm_path == path {
+                                    match drm.initialize() {
+                                        Ok(_) => info!("AnimusEngine: DRM device re-initialized after hotplug"),
+                                        Err(e) => tracing::warn!("AnimusEngine: DRM re-init failed: {}", e),
+                                    }
+                                }
+                            }
                         }
                         UdevEvent::Changed { device_id } => {
                             info!("AnimusEngine: DRM device changed: {}", device_id);
-                            // TODO: Re-enumerate connectors on this device
+                            // Mode change (e.g. monitor resolution changed via HDMI)
+                            // Re-enumerate connectors and resize renderer if output changed.
+                            if let Some(drm) = ctx.state.backend.as_any_mut().downcast_mut::<AnimusDrmBackend>() {
+                                let (w, h, _) = drm.output_geometry();
+                                info!("AnimusEngine: DRM geometry after change: {}x{}", w, h);
+                                ctx.renderer.resize(w, h);
+                            }
                         }
                         UdevEvent::Removed { device_id } => {
                             info!("AnimusEngine: DRM device removed: {}", device_id);
-                            // TODO: Destroy outputs on this device
+                            // Destroy surfaces associated with removed device.
+                            // The compositor continues running on remaining outputs.
+                            if let Some(drm) = ctx.state.backend.as_any_mut().downcast_mut::<AnimusDrmBackend>() {
+                                drm.surfaces.clear();
+                                drm.scanout_buffers.clear();
+                                drm.is_initialized = false;
+                                info!("AnimusEngine: DRM surfaces cleared for removed device {}", device_id);
+                            }
                         }
                     }
                 })
@@ -387,22 +434,46 @@ fn run_bare_metal(mut ctx: CompositorContext) -> anyhow::Result<()> {
         }
     }
 
-    // ── Event Source 4: Libinput (keyboard/mouse/touch) ───────────────
+    // ── Event Source 5: Libinput (keyboard/mouse/touch) ───────────────
     //
     // The libinput context fd is polled for readability. When input events
-    // arrive, we dispatch them through UdevLibinputSeat into the AnimusSeat.
-    //
-    // TODO: Wire libinput fd as Generic event source and dispatch events
-    // The libinput crate's Libinput struct implements AsFd, so it can be
-    // wrapped in calloop::generic::Generic. However, we need to store the
-    // Libinput context in CompositorContext for event dispatch.
-    // For now, we initialize libinput and log that it's ready.
+    // arrive, we dispatch them through UdevLibinputSeat into the AnimusSeat
+    // and MotionWave gesture recognizer.
 
-    match animus_compositor::backend::UdevLibinputSeat::new("seat0") {
-        Ok(_libinput_seat) => {
+    match UdevLibinputSeat::new("seat0") {
+        Ok(libinput_seat) => {
             info!("AnimusEngine: libinput initialized on seat0");
-            // TODO: Store libinput_seat in CompositorContext and register
-            // its fd as a calloop::generic::Generic event source
+
+            // Extract the raw fd from the libinput context for calloop
+            let libinput_fd = libinput_seat.context.as_fd().try_clone_to_owned()
+                .map_err(|e| anyhow::anyhow!("Failed to clone libinput fd: {}", e))?;
+
+            // Store the libinput seat so the calloop callback can dispatch events
+            ctx.libinput_seat = Some(libinput_seat);
+
+            let libinput_source = Generic::new(
+                libinput_fd,
+                Interest::READ,
+                Mode::Level,
+            );
+
+            loop_handle
+                .insert_source(libinput_source, |_readiness, _fd, ctx| {
+                    // Dispatch available libinput events into the seat and MotionWave
+                    if let Some(ref mut seat) = ctx.libinput_seat {
+                        let (w, h, _) = ctx.state.backend.output_geometry();
+                        seat.dispatch_events_full(
+                            &mut ctx.state.seat,
+                            Some(&mut ctx.motion_wave),
+                            w as f32,
+                            h as f32,
+                        );
+                    }
+                    Ok(calloop::PostAction::Continue)
+                })
+                .map_err(|e| anyhow::anyhow!("Failed to insert libinput source: {}", e))?;
+
+            info!("AnimusEngine: libinput event source registered (keyboard/mouse/touch active)");
         }
         Err(e) => {
             tracing::warn!("AnimusEngine: libinput not available ({}), running without input", e);
@@ -416,29 +487,4 @@ fn run_bare_metal(mut ctx: CompositorContext) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("calloop event loop terminated: {}", e))?;
 
     Ok(())
-}
-
-/// Development host event loop (Windows / non-Linux).
-///
-/// Uses a simple timer-based loop that exercises the compositor state machine
-/// at 144Hz. No real Wayland display or DRM — just state + physics + rendering
-/// to the CPU framebuffer for development validation.
-#[cfg(not(target_os = "linux"))]
-fn run_dev_loop(mut ctx: CompositorContext) -> anyhow::Result<()> {
-    info!("AnimusEngine: Development event loop starting (timer-based, 144Hz)");
-
-    let frame_duration = std::time::Duration::from_micros(1_000_000 / 144);
-
-    loop {
-        let frame_start = std::time::Instant::now();
-
-        if let Err(e) = ctx.tick() {
-            tracing::error!("Frame tick failed: {}", e);
-        }
-
-        let elapsed = frame_start.elapsed();
-        if elapsed < frame_duration {
-            std::thread::sleep(frame_duration - elapsed);
-        }
-    }
 }

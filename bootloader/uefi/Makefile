@@ -21,6 +21,7 @@ LDFLAGS         = -nostdlib -znocombreloc -T $(EFI_LDS) -shared \
                   -Bsymbolic -L $(EFILIB) $(EFI_CRT_OBJS)
 
 LIBS            = -lefi -lgnuefi
+FORMAT          = pei-x86-64
 
 all: $(TARGET)
 
@@ -33,7 +34,7 @@ AnimusBoot.so: $(OBJS)
 $(TARGET): AnimusBoot.so
 	objcopy -j .text -j .sdata -j .data -j .dynamic -j .dynsym -j .rel \
 	        -j .rela -j .rel.* -j .rela.* -j .reloc \
-	        --target=efi-app-$(ARCH) $< $@
+	        --subsystem=10 -O $(FORMAT) $< $@
 	@echo "Generated UEFI Application: $@"
 
 clean:

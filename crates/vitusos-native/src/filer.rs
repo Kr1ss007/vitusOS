@@ -11,7 +11,6 @@ use std::thread;
 use animus_core::event_bus::EventBus;
 use animus_core::events::AEEvent;
 use animus_physics::spring::{SpringProfile, SpringSolver, SpringSolver2D};
-use animus_render::altitude::SurfaceAltitude;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -436,7 +435,7 @@ mod tests {
         assert!(daemon.is_running);
         assert!(!daemon.desktop_icons.is_empty());
 
-        let mut window = daemon.spawn_window(std::env::current_dir().unwrap());
+        let window = daemon.spawn_window(std::env::current_dir().unwrap());
 
         // Filer searchbar activation sends AEEvent::PathfinderOpened
         window.activate_search();

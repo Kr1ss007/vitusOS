@@ -76,6 +76,7 @@ pub struct ShellController {
     /// Whether first boot is complete.
     first_boot_done: bool,
 
+    #[allow(dead_code)]
     bus: EventBus,
 }
 
@@ -179,7 +180,7 @@ impl ShellController {
             }
 
             // -- CockpitView --
-            AEEvent::CockpitViewOpen { ctx } => {
+            AEEvent::CockpitViewOpen { ctx: _ } => {
                 if self.mode == ShellMode::Desktop {
                     self.open_cockpit_view();
                 }
@@ -211,7 +212,7 @@ impl ShellController {
                     panel.global_menu.deactivate();
                 }
             }
-            AEEvent::DBusMenuRegistered { app_id, menu_json } => {
+            AEEvent::DBusMenuRegistered { app_id, menu_json: _ } => {
                 // Parse menu JSON and route to focused panel's GlobalMenu
                 // In production, this would parse the dbusmenu JSON
                 tracing::info!("ShellController: D-Bus menu registered for {}", app_id);
@@ -336,7 +337,7 @@ impl ShellController {
         }
 
         // Panel hot zone (fullscreen auto-hide)
-        let panel_w = self.screen_w;
+        let _panel_w = self.screen_w;
         for entry in &mut self.panel_manager.panels {
             entry.panel.on_pointer_motion(y);
         }
@@ -362,7 +363,7 @@ impl ShellController {
     }
 
     /// Route a pointer button event. Returns true if consumed.
-    pub fn on_pointer_button(&mut self, button: u32, x: f32, y: f32, pressed: bool) -> bool {
+    pub fn on_pointer_button(&mut self, _button: u32, x: f32, y: f32, pressed: bool) -> bool {
         match self.mode {
             ShellMode::ShutdownScreen | ShellMode::SystemScreen => return false,
             ShellMode::LockScreen => {
@@ -515,7 +516,7 @@ impl ShellController {
             // Exit fullscreen on focused window
             if let Some(win) = self.window_manager.focused_mut() {
                 if win.is_fullscreen() {
-                    let handle = win.handle;
+                    let _handle = win.handle;
                     win.exit_fullscreen();
                     self.panel_manager.panels.iter_mut().for_each(|e| {
                         e.panel.exit_fullscreen_mode();

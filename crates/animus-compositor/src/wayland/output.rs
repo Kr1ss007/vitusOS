@@ -91,7 +91,7 @@ impl AnimusOutput {
     /// Pixels per inch (DPI) for this output
     pub fn dpi(&self) -> f64 {
         if self.phys_width_mm == 0 { return 96.0; }
-        (self.width as f64 / (self.phys_width_mm as f64 / 25.4))
+        self.width as f64 / (self.phys_width_mm as f64 / 25.4)
     }
 
     /// Effective logical resolution after scale factor

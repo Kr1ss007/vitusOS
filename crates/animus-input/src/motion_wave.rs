@@ -45,6 +45,7 @@ impl Sensitivity {
 }
 
 /// Constants from Part 30 (NOT configurable).
+#[allow(dead_code)]
 const MIN_TRAVEL_PX: f32 = 20.0;
 const AXIS_COMMIT_PX: f32 = 40.0;
 const TAP_MAX_TRAVEL_PX: f32 = 10.0;

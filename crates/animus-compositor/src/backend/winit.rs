@@ -98,6 +98,12 @@ impl AnimusBackend for AnimusWinitBackend {
     fn present_frame(&mut self, _framebuffer: &animus_render::framebuffer::ScanoutFramebuffer) -> Result<()> {
         Ok(())
     }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 #[cfg(test)]

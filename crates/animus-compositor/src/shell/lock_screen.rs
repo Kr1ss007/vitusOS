@@ -76,35 +76,16 @@ impl LockScreen {
     /// Submits password for verification via Linux PAM.
     pub fn submit_password(&self) {
         let pass_str = self.password_buf.read().clone();
-        
-        let mut is_authenticated = false;
+        let user = std::env::var("USER").unwrap_or_else(|_| "vitus".to_string());
+        let is_authenticated = crate::shell::pam::authenticate_user(&user, &pass_str);
 
-        #[cfg(all(target_os = "linux", feature = "pam-auth"))]
-        {
-            let user = std::env::var("USER").unwrap_or_else(|_| "vitus".to_string());
-            if let Ok(mut auth) = pam::Authenticator::with_password(&user) {
-                auth.get_handler().set_credentials(pass_str.clone());
-                if auth.authenticate().is_ok() && auth.open_session().is_ok() {
-                    is_authenticated = true;
-                }
-            }
-        }
-        
-        #[cfg(not(all(target_os = "linux", feature = "pam-auth")))]
-        {
-            // Fallback for WSLg/Windows Dev where PAM is not configured
-            if !pass_str.is_empty() {
-                is_authenticated = true;
-            }
-        }
-        
         if is_authenticated {
             self.deactivate();
         } else {
             // Shake animation on failure (SPRING_SELECTION velocity injection)
             let mut shake = self.shake_x.write();
             shake.set_velocity(350.0);
-            info!("LockScreen: PAM Authentication failed -> Triggered shake animation.");
+            info!("LockScreen: PAM Authentication failed for user '{}' -> Triggered shake animation.", user);
         }
     }
 
@@ -134,14 +115,16 @@ mod tests {
         assert!(*lock.is_active.read());
         assert!(lock.shake_x.read().velocity > 0.0);
 
-        // Input password and submit -> unlock
+        // Input password and test buffer
         lock.input_char('v');
         lock.input_char('i');
         lock.input_char('t');
         lock.input_char('u');
         lock.input_char('s');
-        lock.submit_password();
+        assert_eq!(*lock.password_buf.read(), "vitus");
 
+        // Deactivate directly
+        lock.deactivate();
         assert!(!*lock.is_active.read());
         assert_eq!(lock.opacity.read().target, 0.0);
     }

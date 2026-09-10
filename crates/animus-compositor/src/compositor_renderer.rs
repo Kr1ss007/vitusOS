@@ -13,7 +13,7 @@
 //!   5. The backend (DRM/Winit) scans out the framebuffer
 
 use crate::shell_controller::{ShellController, ShellMode};
-use crate::shell::{Dock, Panel};
+use crate::shell::Panel;
 use animus_render::pipeline::{RenderPipeline, RenderWindow};
 use animus_render::altitude::SurfaceAltitude;
 
@@ -126,7 +126,7 @@ impl CompositorRenderer {
         // Draw darkened background overlay
         let bg_alpha = (cockpit.bg_darken.value * 255.0) as u32;
         if bg_alpha > 0 {
-            let bg_color = (bg_alpha << 24) | 0x00000000;
+            let _bg_color = (bg_alpha << 24) | 0x00000000;
             let fb = &mut self.pipeline.framebuffer;
             for y in 0..fb.height {
                 for x in 0..fb.width {
@@ -187,7 +187,7 @@ impl CompositorRenderer {
             if alpha > 0 {
                 let fb = &mut self.pipeline.framebuffer;
                 // Dark blur overlay — #1A1208 with opacity
-                let bg = ((alpha as f32 * 0.85) as u32) << 24 | 0x1A1208;
+                let _bg = ((alpha as f32 * 0.85) as u32) << 24 | 0x1A1208;
                 let bg_clamped = (alpha.min(255) << 24) | 0x001A1208;
                 for y in 0..fb.height {
                     for x in 0..fb.width {

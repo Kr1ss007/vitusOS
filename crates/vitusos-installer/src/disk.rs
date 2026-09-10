@@ -3,12 +3,12 @@
 use crate::types::{DiskTransport, PartitionEntry, TargetDisk};
 use std::fs;
 use std::path::Path;
-use tracing::{debug, info};
+use tracing::info;
 
 pub struct DiskScanner;
 
 impl DiskScanner {
-    /// Scans system block devices from `/sys/block/` on Linux, with fallback mocks for non-Linux/testing environments.
+    /// Scans system block devices and active partition topologies directly from `/sys/block/` on Linux.
     pub fn scan_disks() -> Vec<TargetDisk> {
         let mut disks = Vec::new();
         let sys_block = Path::new("/sys/block");
@@ -58,6 +58,52 @@ impl DiskScanner {
                         .trim()
                         == "1";
 
+                    let mut partitions = Vec::new();
+
+                    // Discover real partitions within this block device
+                    if let Ok(sub_entries) = fs::read_dir(entry.path()) {
+                        for sub in sub_entries.flatten() {
+                            let part_name = sub.file_name().to_string_lossy().to_string();
+                            if part_name.starts_with(&name) && part_name != name {
+                                let part_size_file = sub.path().join("size");
+                                let part_sectors = fs::read_to_string(part_size_file)
+                                    .unwrap_or_default()
+                                    .trim()
+                                    .parse::<u64>()
+                                    .unwrap_or(0);
+                                let part_bytes = part_sectors * 512;
+
+                                if part_bytes > 0 {
+                                    let part_dev_path = format!("/dev/{}", part_name);
+                                    let mut mount_point = None;
+                                    let mut filesystem = "unknown".to_string();
+
+                                    // Check /proc/mounts for real mount point and fs
+                                    if let Ok(mounts) = fs::read_to_string("/proc/mounts") {
+                                        for line in mounts.lines() {
+                                            let parts: Vec<&str> = line.split_whitespace().collect();
+                                            if parts.len() >= 3 && parts[0] == part_dev_path {
+                                                mount_point = Some(parts[1].to_string());
+                                                filesystem = parts[2].to_string();
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    partitions.push(PartitionEntry {
+                                        name: part_name,
+                                        size_bytes: part_bytes,
+                                        filesystem,
+                                        mount_point,
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    // Sort partitions by name (e.g. p1, p2, p3)
+                    partitions.sort_by(|a, b| a.name.cmp(&b.name));
+
                     disks.push(TargetDisk {
                         id: name,
                         model,
@@ -65,55 +111,13 @@ impl DiskScanner {
                         size_bytes,
                         transport,
                         is_removable,
-                        partitions: Vec::new(),
+                        partitions,
                     });
                 }
             }
         }
 
-        // If no disks were detected (e.g. running in testing/dev harness), provide canonical preview disks
-        if disks.is_empty() {
-            debug!("Providing canonical NVMe/SATA test hardware profile for installer wizard.");
-            disks.push(TargetDisk {
-                id: "nvme0n1".to_string(),
-                model: "Samsung SSD 990 PRO 2TB".to_string(),
-                path: "/dev/nvme0n1".to_string(),
-                size_bytes: 2_000_398_934_016, // ~2.0 TB
-                transport: DiskTransport::Nvme,
-                is_removable: false,
-                partitions: vec![
-                    PartitionEntry {
-                        name: "nvme0n1p1".to_string(),
-                        size_bytes: 536_870_912, // 512MB
-                        filesystem: "vfat (EFI System)".to_string(),
-                        mount_point: Some("/boot/efi".to_string()),
-                    },
-                    PartitionEntry {
-                        name: "nvme0n1p2".to_string(),
-                        size_bytes: 1_999_862_063_104,
-                        filesystem: "btrfs (vitusOS root)".to_string(),
-                        mount_point: Some("/".to_string()),
-                    },
-                ],
-            });
-
-            disks.push(TargetDisk {
-                id: "sda".to_string(),
-                model: "Crucial MX500 1TB SSD".to_string(),
-                path: "/dev/sda".to_string(),
-                size_bytes: 1_000_204_886_016, // ~1.0 TB
-                transport: DiskTransport::Sata,
-                is_removable: false,
-                partitions: vec![PartitionEntry {
-                    name: "sda1".to_string(),
-                    size_bytes: 1_000_204_886_016,
-                    filesystem: "ntfs (Windows Data)".to_string(),
-                    mount_point: None,
-                }],
-            });
-        }
-
-        info!("DiskScanner: Detected {} available storage devices.", disks.len());
+        info!("DiskScanner: Detected {} physical storage devices.", disks.len());
         disks
     }
 }
